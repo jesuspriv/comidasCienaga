@@ -1,36 +1,145 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# 🍽️ ComidasCiénaga
 
-## Getting Started
+Directorio gastronómico digital de Ciénaga, Magdalena, Colombia. Un solo lugar donde cualquier persona que venda comida puede registrar su negocio, y cualquier cliente puede buscar lo que quiere comer y descubrir dónde conseguirlo.
 
-First, run the development server:
+## ¿Qué problema resuelve?
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+El cliente quiere comer algo específico pero no sabe dónde conseguirlo en Ciénaga. Los negocios están dispersos en Instagram, Facebook o simplemente no tienen presencia digital. ComidasCiénaga centraliza todo en un buscador por plato o producto.
+
+**Ejemplo:** Una persona quiere una hamburguesa. Entra a la plataforma, escribe "hamburguesa" y le aparecen todos los locales de Ciénaga que la venden — con fotos, horarios y contacto directo por WhatsApp.
+
+## 🚀 Stack tecnológico
+
+| Capa | Tecnología |
+|---|---|
+| Frontend | Next.js 15 (App Router) |
+| Estilos | Tailwind CSS |
+| Base de datos | Supabase (PostgreSQL) |
+| Autenticación | Supabase Auth |
+| Almacenamiento | Supabase Storage |
+| Despliegue | Vercel |
+
+## ✨ Funcionalidades
+
+- 🔍 Búsqueda de locales por plato o producto
+- 🗂️ Filtro por categorías (comida rápida, bebidas, postres, típica, parrilla)
+- 🟢 Badge "Abierto ahora" en tiempo real
+- ⭐ Sistema de calificaciones y reseñas
+- 📋 Registro de negocio en 4 pasos
+- 📸 Galería de fotos de comida
+- 📄 Carta del menú en foto o PDF
+- 💬 Contacto directo por WhatsApp
+- 🧑‍💼 Panel del dueño para gestionar su negocio
+
+## 🗂️ Estructura del proyecto
+
+```
+comidas-cienaga/
+├── app/
+│   ├── (auth)/
+│   │   ├── login/
+│   │   └── registro/
+│   ├── (public)/
+│   │   ├── page.js           # Pantalla principal
+│   │   ├── buscar/           # Resultados de búsqueda
+│   │   └── negocio/[id]/     # Perfil del negocio
+│   ├── dashboard/            # Panel del dueño
+│   │   └── editar/
+│   ├── sitemap.js
+│   └── robots.js
+├── components/
+│   ├── ui/
+│   │   ├── NegocioCard.js
+│   │   ├── Buscador.js
+│   │   ├── TagPill.js
+│   │   └── BackButton.js
+│   └── forms/
+│       └── RegistroNegocio.js
+└── lib/
+    └── supabase/
+        ├── client.js
+        └── server.js
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ⚙️ Instalación local
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+**1. Clona el repositorio**
+```bash
+git clone https://github.com/TU_USUARIO/comidas-cienaga.git
+cd comidas-cienaga
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**2. Instala dependencias**
+```bash
+npm install
+```
 
-## Learn More
+**3. Configura las variables de entorno**
 
-To learn more about Next.js, take a look at the following resources:
+Crea un archivo `.env.local` en la raíz del proyecto:
+```
+NEXT_PUBLIC_SUPABASE_URL=tu_url_de_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Encuentra estos valores en **Supabase → Settings → API**.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**4. Configura la base de datos**
 
-## Deploy on Vercel
+En **Supabase → SQL Editor**, ejecuta el archivo `cienaga_database.sql` que encontrarás en la raíz del proyecto.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Luego crea estos buckets en **Supabase → Storage** (todos públicos):
+- `fotos-comida`
+- `cartas-menu`
+- `fotos-locales`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**5. Corre el proyecto**
+```bash
+npm run dev
+```
+
+Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+
+## 🗄️ Base de datos
+
+| Tabla | Descripción |
+|---|---|
+| `usuarios` | Perfil del dueño del negocio |
+| `negocios` | Información del local |
+| `tags` | Productos que vende cada negocio |
+| `fotos_comida` | Galería de fotos del local |
+| `cartas` | Carta del menú (foto o PDF) |
+| `calificaciones` | Reseñas de los clientes |
+
+La función RPC `buscar_por_tag(termino)` maneja el buscador principal usando full-text search en PostgreSQL.
+
+## 🌐 Variables de entorno
+
+| Variable | Descripción |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto en Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave pública de Supabase |
+
+## 📦 Deploy en Vercel
+
+1. Sube el proyecto a GitHub
+2. Entra a [vercel.com](https://vercel.com) y conecta el repositorio
+3. Agrega las variables de entorno en Vercel → Settings → Environment Variables
+4. Vercel despliega automáticamente con cada push a `main`
+
+## 🗺️ Roadmap
+
+- [ ] Sistema de calificaciones visible para el cliente
+- [ ] Filtro por "Abierto ahora"
+- [ ] Registro de clientes
+- [ ] Notificaciones por WhatsApp
+- [ ] Panel de estadísticas para el dueño
+- [ ] Versión PWA (instalable en celular)
+
+## 👨‍💻 Autor
+
+Desarrollado por **Jesus David** — Ciénaga, Magdalena, Colombia.
+
+---
+
+*ComidasCiénaga — Hecho con ❤️ para Ciénaga*
