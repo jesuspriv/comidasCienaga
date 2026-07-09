@@ -4,9 +4,10 @@ import NegocioCard from '@/components/ui/NegocioCard'
 
 export const metadata = {
   title: 'ComidasCiénaga — Encuentra dónde comer en Ciénaga, Magdalena',
-  description: 'Directorio gastronómico de Ciénaga. Busca hamburguesas, fritanga, jugos, comida típica y más. Descubre todos los locales de comida de Ciénaga, Magdalena.',
+  description: 'Gastronomia de Ciénaga. Descubre todos los locales de comida de Ciénaga, Magdalena.',
   keywords: 'comida Ciénaga, restaurantes Ciénaga, comida rápida Ciénaga, donde comer Ciénaga, Magdalena, fritanga Ciénaga, hamburguesa Ciénaga',
   openGraph: {
+    siteName: 'Comidas Ciénaga',
     title: 'ComidasCiénaga — Encuentra dónde comer en Ciénaga',
     description: 'Descubre todos los locales de comida de Ciénaga, Magdalena en un solo lugar.',
     type: 'website',
