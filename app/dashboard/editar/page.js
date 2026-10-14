@@ -1,305 +1,220 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { validateMenuFile, validatePhotoFiles } from '@/lib/uploads'
+import { Aviso, Cargando, PanelHeader } from '@/components/dashboard/PanelUI'
+import Icon from '@/components/ui/Icon'
 
 export default function EditarPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(createClient)
   const [negocio, setNegocio] = useState(null)
   const [tags, setTags] = useState([])
   const [tagInput, setTagInput] = useState('')
   const [fotos, setFotos] = useState([])
-  const [subiendo, setSubiendo] = useState(false)
-  const [mensaje, setMensaje] = useState('')
+  const [subiendoFotos, setSubiendoFotos] = useState(false)
   const [subiendoCarta, setSubiendoCarta] = useState(false)
+  const [mensaje, setMensaje] = useState(null)
 
   useEffect(() => {
+    let activo = true
     async function cargar() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return router.push('/login')
-
-      const { data } = await supabase
-        .from('negocios')
-        .select(`*, tags(id, valor), fotos_comida(id, url), cartas(id, url, tipo)`)
-        .eq('usuario_id', user.id)
-        .single()
-
-      if (!data) return router.push('/registro')
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError || !authData.user) return router.replace('/login')
+      const { data, error } = await supabase.from('negocios').select('*, tags(id, valor), fotos_comida(id, url), cartas(id, url, tipo)').eq('usuario_id', authData.user.id).single()
+      if (!activo) return
+      if (error || !data) return router.replace('/registro')
       setNegocio(data)
       setTags(data.tags || [])
       setFotos(data.fotos_comida || [])
     }
     cargar()
-  }, [])
+    return () => { activo = false }
+  }, [router, supabase])
 
-  // ── Tags ──────────────────────────────────────────────────
-
-  async function agregarTag(e) {
-    if (e.key === ',' || e.key === 'Enter') {
-      e.preventDefault()
-      const nuevo = tagInput.replace(',', '').trim().toLowerCase()
-      if (!nuevo) return
-      if (tags.find(t => t.valor === nuevo)) {
-        setTagInput('')
-        return
-      }
-      const { data, error } = await supabase
-        .from('tags')
-        .insert({ negocio_id: negocio.id, valor: nuevo })
-        .select()
-        .single()
-      if (!error) {
-        setTags(prev => [...prev, data])
-        setTagInput('')
-      }
-    }
+  function avisar(tipo, texto) {
+    setMensaje({ tipo, texto })
+    window.setTimeout(() => setMensaje(null), 3500)
   }
 
-  async function borrarTag(tagId) {
-    await supabase.from('tags').delete().eq('id', tagId)
-    setTags(prev => prev.filter(t => t.id !== tagId))
+  async function agregarTag(event) {
+    if (event.key !== ',' && event.key !== 'Enter') return
+    event.preventDefault()
+    const valor = tagInput.replace(',', '').trim().toLowerCase()
+    if (!valor || tags.some(tag => tag.valor === valor)) return setTagInput('')
+    const { data, error } = await supabase.from('tags').insert({ negocio_id: negocio.id, valor }).select().single()
+    if (error) return avisar('error', 'No pudimos agregar ese producto.')
+    setTags(actuales => [...actuales, data])
+    setTagInput('')
   }
 
-  // ── Fotos ─────────────────────────────────────────────────
+  async function borrarTag(id) {
+    const { error } = await supabase.from('tags').delete().eq('id', id)
+    if (error) return avisar('error', 'No pudimos eliminar el producto.')
+    setTags(actuales => actuales.filter(tag => tag.id !== id))
+  }
 
-  async function subirFotos(e) {
-    const archivos = Array.from(e.target.files)
+  async function subirFotos(event) {
+    const archivos = Array.from(event.target.files || [])
     if (!archivos.length) return
-    setSubiendo(true)
-
-    for (const archivo of archivos) {
-      const ext  = archivo.name.split('.').pop()
-      const path = `${negocio.id}/${Date.now()}.${ext}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('fotos-comida')
-        .upload(path, archivo)
-
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage
-          .from('fotos-comida')
-          .getPublicUrl(path)
-
-        const { data: foto } = await supabase
-          .from('fotos_comida')
-          .insert({ negocio_id: negocio.id, url: urlData.publicUrl })
-          .select()
-          .single()
-
-        if (foto) setFotos(prev => [...prev, foto])
+    const validation = validatePhotoFiles(archivos, fotos.length)
+    if (validation.error) {
+      avisar('error', validation.error)
+      event.target.value = ''
+      return
+    }
+    setSubiendoFotos(true)
+    try {
+      for (const [indice, archivo] of validation.files.entries()) {
+        const extension = archivo.name.split('.').pop()
+        const path = `${negocio.id}/${Date.now()}-${indice}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('fotos-comida').upload(path, archivo)
+        if (uploadError) throw uploadError
+        const { data: urlData } = supabase.storage.from('fotos-comida').getPublicUrl(path)
+        const { data: foto, error: fotoError } = await supabase.from('fotos_comida').insert({ negocio_id: negocio.id, url: urlData.publicUrl }).select().single()
+        if (fotoError) throw fotoError
+        setFotos(actuales => [...actuales, foto])
       }
+      avisar('success', 'Tus fotos ya aparecen en el perfil público.')
+    } catch {
+      avisar('error', 'No pudimos subir una o más fotos. Inténtalo de nuevo.')
     }
-    setSubiendo(false)
-    setMensaje('¡Fotos subidas!')
-    setTimeout(() => setMensaje(''), 3000)
+    setSubiendoFotos(false)
+    event.target.value = ''
   }
 
-  async function borrarFoto(fotoId, url) {
-    // Borrar de Storage
-    const path = url.split('fotos-comida/')[1]
-    await supabase.storage.from('fotos-comida').remove([path])
-    // Borrar de la tabla
-    await supabase.from('fotos_comida').delete().eq('id', fotoId)
-    setFotos(prev => prev.filter(f => f.id !== fotoId))
+  async function borrarFoto(foto) {
+    const path = foto.url.split('fotos-comida/')[1]
+    const { error: storageError } = path ? await supabase.storage.from('fotos-comida').remove([path]) : { error: null }
+    if (storageError) return avisar('error', 'No pudimos eliminar la foto.')
+    const { error } = await supabase.from('fotos_comida').delete().eq('id', foto.id)
+    if (error) return avisar('error', 'No pudimos eliminar la foto.')
+    setFotos(actuales => actuales.filter(item => item.id !== foto.id))
   }
-//subir carta
-  async function subirCarta(e) {
-  const archivo = e.target.files[0]
-  if (!archivo) return
-  setSubiendoCarta(true)
 
-  const ext  = archivo.name.split('.').pop()
-  const path = `${negocio.id}/carta_${Date.now()}.${ext}`
-  const tipo = ext === 'pdf' ? 'pdf' : 'foto'
-
-  const { error: uploadError } = await supabase.storage
-    .from('cartas-menu')
-    .upload(path, archivo)
-
-  if (!uploadError) {
-    const { data: urlData } = supabase.storage
-      .from('cartas-menu')
-      .getPublicUrl(path)
-
-    const { data: carta } = await supabase
-      .from('cartas')
-      .insert({ negocio_id: negocio.id, url: urlData.publicUrl, tipo })
-      .select()
-      .single()
-
-    if (carta) {
-      setNegocio(prev => ({ ...prev, cartas: [...(prev.cartas || []), carta] }))
-      setMensaje('¡Carta subida!')
-      setTimeout(() => setMensaje(''), 3000)
+  async function subirCarta(event) {
+    const archivo = event.target.files?.[0]
+    if (!archivo) return
+    const validation = validateMenuFile(archivo)
+    if (validation.error) {
+      avisar('error', validation.error)
+      event.target.value = ''
+      return
     }
+    setSubiendoCarta(true)
+    try {
+      const extension = validation.file.name.split('.').pop()
+      const path = `${negocio.id}/carta-${Date.now()}.${extension}`
+      const { error: uploadError } = await supabase.storage.from('cartas-menu').upload(path, validation.file)
+      if (uploadError) throw uploadError
+      const { data: urlData } = supabase.storage.from('cartas-menu').getPublicUrl(path)
+      const { data: carta, error: cartaError } = await supabase.from('cartas').insert({ negocio_id: negocio.id, url: urlData.publicUrl, tipo: extension?.toLowerCase() === 'pdf' ? 'pdf' : 'foto' }).select().single()
+      if (cartaError) throw cartaError
+      setNegocio(actual => ({ ...actual, cartas: [...(actual.cartas || []), carta] }))
+      avisar('success', 'Tu carta ya está disponible en el perfil.')
+    } catch {
+      avisar('error', 'No pudimos subir la carta. Inténtalo de nuevo.')
+    }
+    setSubiendoCarta(false)
+    event.target.value = ''
   }
-  setSubiendoCarta(false)
-}
 
-async function borrarCarta(carta) {
-  const path = carta.url.split('cartas-menu/')[1]
-  await supabase.storage.from('cartas-menu').remove([path])
-  await supabase.from('cartas').delete().eq('id', carta.id)
-  setNegocio(prev => ({ ...prev, cartas: prev.cartas.filter(c => c.id !== carta.id) }))
-}
+  async function borrarCarta(carta) {
+    const path = carta.url.split('cartas-menu/')[1]
+    const { error: storageError } = path ? await supabase.storage.from('cartas-menu').remove([path]) : { error: null }
+    if (storageError) return avisar('error', 'No pudimos eliminar la carta.')
+    const { error } = await supabase.from('cartas').delete().eq('id', carta.id)
+    if (error) return avisar('error', 'No pudimos eliminar la carta.')
+    setNegocio(actual => ({ ...actual, cartas: actual.cartas.filter(item => item.id !== carta.id) }))
+  }
 
-
-
-
-  if (!negocio) return (
-    <main className="min-h-screen bg-[#FAFAF8] flex items-center justify-center">
-      <p className="text-sm text-[#888780]">Cargando...</p>
-    </main>
-  )
+  if (!negocio) return <Cargando texto="Cargando tu editor…" />
 
   return (
-    <main className="min-h-screen bg-[#FAFAF8] pb-10">
+    <>
+      <PanelHeader />
+      <main className="mx-auto max-w-4xl px-4 pb-16 pt-6 sm:px-8 sm:pt-8">
+        <p className="eyebrow">Gestiona tu vitrina</p>
+        <h1 className="mt-1 text-[28px] font-bold tracking-[-0.04em] sm:text-3xl">Productos, fotos y carta</h1>
 
-      {/* Header */}
-      <header className="px-4 pt-6 pb-4 flex items-center gap-3">
-        <button onClick={() => router.push('/dashboard')} className="text-[#5F5E5A] text-sm">
-          ← Volver
-        </button>
-        <h1 className="text-lg font-semibold text-[#2C2C2A]">Editar productos y fotos</h1>
-      </header>
+        {mensaje && <Aviso mensaje={mensaje} />}
 
-      <div className="px-4">
+        <Seccion titulo="Lo que vendes" descripcion="Usa palabras que los clientes buscarían para encontrarte." icon="tag" tono="bg-brand-soft text-brand-dark">
+          <label htmlFor="nuevo-tag" className="sr-only">Nuevo producto</label>
+          <input id="nuevo-tag" value={tagInput} onChange={event => setTagInput(event.target.value)} onKeyDown={agregarTag} placeholder="Hamburguesa, sancocho, jugo de corozo" className="input mt-5" />
+          <p className="mt-2 text-xs text-ink-subtle">Presiona Enter o coma para agregar un producto.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {tags.length ? tags.map(tag => (
+              <span key={tag.id} className="flex h-9 items-center gap-1.5 rounded-full bg-chip pl-3.5 pr-1.5 text-sm font-medium">
+                {tag.valor}
+                <button type="button" onClick={() => borrarTag(tag.id)} aria-label={`Eliminar ${tag.valor}`} className="flex h-6 w-6 items-center justify-center rounded-full text-ink-muted transition hover:bg-line hover:text-ink"><Icon name="x" size={14} /></button>
+              </span>
+            )) : <p className="text-sm text-ink-subtle">Aún no agregas productos.</p>}
+          </div>
+        </Seccion>
 
-        {/* Tags */}
-        <div className="bg-white border border-[#D3D1C7] rounded-2xl p-4 mb-4">
-          <p className="text-sm font-medium text-[#2C2C2A] mb-1">Lo que vendes</p>
-          <p className="text-xs text-[#888780] mb-3">Escribe un producto y presiona coma o Enter para agregarlo</p>
-
-          <input
-            type="text"
-            value={tagInput}
-            onChange={e => setTagInput(e.target.value)}
-            onKeyDown={agregarTag}
-            placeholder="Ej: hamburguesa, sancocho, jugo..."
-            className="w-full bg-[#FAFAF8] border border-[#E8593C] rounded-xl py-3 px-4 text-sm text-[#2C2C2A] placeholder-[#B4B2A9] focus:outline-none mb-3"
-          />
-
-          {tags.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {tags.map(tag => (
-                <span key={tag.id} className="flex items-center gap-1 bg-[#FAECE7] text-[#993C1D] text-xs px-3 py-1 rounded-full">
-                  {tag.valor}
-                  <button
-                    onClick={() => borrarTag(tag.id)}
-                    className="text-[#993C1D] font-bold ml-1 hover:opacity-70"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-[#B4B2A9]">Aún no tienes productos agregados</p>
-          )}
-        </div>
-
-        {/* Fotos */}
-        <div className="bg-white border border-[#D3D1C7] rounded-2xl p-4 mb-4">
-          <p className="text-sm font-medium text-[#2C2C2A] mb-1">Fotos de tu comida</p>
-          <p className="text-xs text-[#888780] mb-3">Estas fotos aparecen en tu perfil público</p>
-
-          {/* Grid de fotos */}
+        <Seccion titulo="Fotos de tu comida" descripcion="La primera foto es la que aparece en tu tarjeta y en tu perfil." icon="camera" tono="bg-mango-soft text-mango">
           {fotos.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {fotos.map(foto => (
-                <div key={foto.id} className="relative h-24 rounded-xl overflow-hidden bg-[#F1EFE8]">
-                  <img src={foto.url} alt="" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => borrarFoto(foto.id, foto.url)}
-                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-black/70"
-                  >
-                    ×
-                  </button>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {fotos.map((foto, indice) => (
+                <div key={foto.id} className="group relative aspect-square overflow-hidden rounded-2xl bg-chip">
+                  <img src={foto.url} alt={`Foto ${indice + 1} de ${negocio.nombre}`} className="h-full w-full object-cover" />
+                  {indice === 0 && <span className="absolute left-2 top-2 rounded-full bg-white px-2.5 py-1 text-xs font-semibold">Principal</span>}
+                  <button type="button" onClick={() => borrarFoto(foto)} className="absolute right-2 top-2 h-9 rounded-lg bg-black/65 px-3 text-xs font-semibold text-white opacity-100 transition hover:bg-black/80 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100">Eliminar</button>
                 </div>
               ))}
             </div>
           )}
+          <Upload label={subiendoFotos ? 'Subiendo fotos…' : 'Agregar fotos'} detail="JPG, PNG o WebP, hasta 5 MB cada una." accept="image/jpeg,image/png,image/webp" multiple onChange={subirFotos} disabled={subiendoFotos} />
+        </Seccion>
 
-          {/* Subir fotos */}
-          <label className="block w-full bg-[#FAFAF8] border border-dashed border-[#D3D1C7] rounded-xl p-4 text-center cursor-pointer hover:border-[#E8593C] transition-colors">
-            <span className="text-2xl block mb-1">{subiendo ? '⏳' : '📷'}</span>
-            <span className="text-sm text-[#5F5E5A]">
-              {subiendo ? 'Subiendo fotos...' : 'Agregar fotos'}
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={subirFotos}
-              disabled={subiendo}
-            />
-          </label>
-        </div>
-
-        {mensaje && (
-          <p className="text-center text-sm text-green-600 mb-4">{mensaje}</p>
-        )}
-
-
-
-                {/* Carta del menú */}
-        <div className="bg-white border border-[#D3D1C7] rounded-2xl p-4 mb-4">
-          <p className="text-sm font-medium text-[#2C2C2A] mb-1">Carta del menú</p>
-          <p className="text-xs text-[#888780] mb-3">Sube una foto o PDF de tu carta</p>
-
-          {/* Carta actual */}
+        <Seccion titulo="Carta del menú" descripcion="Sube una foto o PDF para que los clientes consulten los precios." icon="menu" tono="bg-teal-soft text-teal">
           {negocio.cartas?.length > 0 && (
-            <div className="mb-3">
-              {negocio.cartas.map((carta, i) => (
-                <div key={i} className="flex items-center justify-between bg-[#F1EFE8] rounded-xl px-4 py-3 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span>{carta.tipo === 'pdf' ? '📄' : '🖼️'}</span>
-                    <a
-                      href={carta.url}
-                      target="_blank"
-                      className="text-sm text-[#E8593C] underline"
-                    >
-                      Ver carta actual
-                    </a>
-                  </div>
-                  <button
-                    onClick={() => borrarCarta(carta)}
-                    className="text-xs text-[#888780] hover:text-red-500"
-                  >
-                    Eliminar
-                  </button>
+            <div className="mt-5 space-y-2">
+              {negocio.cartas.map((carta, indice) => (
+                <div key={carta.id} className="flex items-center justify-between gap-3 rounded-2xl bg-chip-soft p-3.5">
+                  <a href={carta.url} target="_blank" rel="noopener noreferrer" className="min-w-0 text-sm font-semibold hover:underline">{carta.tipo === 'pdf' ? 'Ver menú en PDF' : `Ver carta ${indice + 1}`}</a>
+                  <button type="button" onClick={() => borrarCarta(carta)} className="h-9 shrink-0 rounded-lg px-3 text-xs font-semibold text-danger transition hover:bg-danger-soft">Eliminar</button>
                 </div>
               ))}
             </div>
           )}
+          <Upload label={subiendoCarta ? 'Subiendo carta…' : 'Subir carta'} detail="Imagen o PDF, hasta 10 MB." accept="image/jpeg,image/png,image/webp,.pdf" onChange={subirCarta} disabled={subiendoCarta} />
+        </Seccion>
 
-          {/* Subir nueva carta */}
-          <label className="block w-full bg-[#FAFAF8] border border-dashed border-[#D3D1C7] rounded-xl p-4 text-center cursor-pointer hover:border-[#E8593C] transition-colors">
-            <span className="text-2xl block mb-1">{subiendoCarta ? '⏳' : '📄'}</span>
-            <span className="text-sm text-[#5F5E5A]">
-              {subiendoCarta ? 'Subiendo carta...' : 'Subir foto o PDF de la carta'}
-            </span>
-            <input
-              type="file"
-              accept="image/*,.pdf"
-              className="hidden"
-              onChange={subirCarta}
-              disabled={subiendoCarta}
-            />
-          </label>
+        <Link href="/dashboard" className="btn-dark mt-8 w-full">Listo, volver a mi panel</Link>
+      </main>
+    </>
+  )
+}
+
+function Seccion({ titulo, descripcion, icon, tono, children }) {
+  return (
+    <section className="card mt-5 p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold tracking-[-0.02em]">{titulo}</h2>
+          <p className="mt-1 text-sm text-ink-subtle">{descripcion}</p>
         </div>
-        
-        <button
-          onClick={() => router.push('/dashboard')}
-          className="w-full bg-[#E8593C] text-white rounded-xl py-3 text-sm font-medium hover:bg-[#D14E34] transition-colors"
-        >
-          Listo
-        </button>
-
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tono}`}><Icon name={icon} /></span>
       </div>
-    </main>
+      {children}
+    </section>
+  )
+}
+
+function Upload({ label, detail, accept, multiple, onChange, disabled }) {
+  return (
+    <label className={`mt-5 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-dashed border-line-strong bg-paper p-4 transition hover:border-ink ${disabled ? 'cursor-wait opacity-70' : ''}`}>
+      <span className="flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-ink"><Icon name="plus" /></span>
+        <span><span className="block text-sm font-semibold">{label}</span><span className="mt-0.5 block text-xs text-ink-subtle">{detail}</span></span>
+      </span>
+      <span className="hidden h-9 items-center rounded-lg bg-white px-3 text-xs font-semibold ring-1 ring-line-strong sm:flex">Elegir archivo</span>
+      <input type="file" accept={accept} multiple={multiple} className="sr-only" disabled={disabled} onChange={onChange} />
+    </label>
   )
 }

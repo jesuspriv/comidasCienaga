@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-paper: #fafaf7;
+  --color-ink: #18181b;
+  --color-ink-soft: #2e2e33;
+  --color-ink-muted: #57534c;
+  --color-ink-subtle: #6b675f;
+  --color-line: #eceae4;
+  --color-line-strong: #dedbd3;
+  --color-chip: #f1efe9;
+  --color-chip-soft: #f4f2ee;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-brand: #e5482d;
+  --color-brand-dark: #c93a1f;
+  --color-brand-soft: #fbe3dc;
+  --color-brand-tint: #ffe1d9;
+  --color-peach: #ffb27a;
+
+  --color-ok: #1e7a45;
+  --color-ok-dot: #1e9a52;
+  --color-ok-soft: #e6f4ec;
+  --color-danger: #a8321f;
+  --color-danger-soft: #fdeeea;
+
+  --color-teal: #0e6b63;
+  --color-teal-soft: #e3f2f0;
+  --color-rose: #a3264f;
+  --color-rose-soft: #fdebf1;
+  --color-mango: #8a5a00;
+  --color-mango-soft: #fdf3d8;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-brand-tint);
+  color: var(--color-ink);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink;
+  }
+
+  .input {
+    @apply h-12 w-full rounded-xl border border-line-strong bg-white px-4 text-base text-ink outline-none transition placeholder:text-ink-subtle/80 focus:border-ink focus:ring-4 focus:ring-ink/10;
+  }
+
+  .btn-primary {
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-[15px] font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-dark {
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-ink px-5 text-[15px] font-semibold text-white transition hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-secondary {
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-line-strong bg-white px-5 text-[15px] font-medium text-ink transition hover:border-ink disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .card {
+    @apply rounded-[20px] border border-line bg-white;
+  }
+
+  .eyebrow {
+    @apply text-[13px] font-semibold text-brand-dark;
+  }
 }

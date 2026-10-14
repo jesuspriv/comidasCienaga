@@ -1,17 +1,15 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { validateMenuFile, validatePhotoFiles } from '@/lib/uploads'
+import { CATEGORIAS, obtenerCategoria } from '@/lib/categorias'
+import Logo from '@/components/ui/Logo'
+import Icon from '@/components/ui/Icon'
 
-const CATEGORIAS = [
-  { valor: 'comida_rapida', emoji: '🍔', label: 'Comida rápida' },
-  { valor: 'bebidas',       emoji: '🥤', label: 'Bebidas y café' },
-  { valor: 'postres',       emoji: '🍓', label: 'Dulces y postres' },
-  { valor: 'tipica',        emoji: '🍲', label: 'Comida típica' },
-  { valor: 'parrilla',      emoji: '🥩', label: 'Parrilla' },
-  { valor: 'otros',         emoji: '📦', label: 'Otros' },
-]
+const PASOS = ['Cuenta', 'Negocio', 'Productos', 'Publicar']
 
 export default function RegistroPage() {
   const router = useRouter()
@@ -19,361 +17,260 @@ export default function RegistroPage() {
   const [paso, setPaso] = useState(1)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
+  const [mostrarPassword, setMostrarPassword] = useState(false)
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horario: '', tagsInput: '', tags: [], cartaFile: null, fotosFiles: [] })
 
-  const [form, setForm] = useState({
-    // Paso 1 - cuenta
-    nombre:     '',
-    email:      '',
-    password:   '',
-    whatsapp:   '',
-    // Paso 2 - negocio
-    nombreNegocio: '',
-    categoria:     '',
-    direccion:     '',
-    whatsappNegocio: '',
-    horario:       '',
-    // Paso 3 - productos
-    tagsInput:  '',
-    tags:       [],
-    cartaFile:  null,
-    fotosFiles: [],
-  })
-
-  function actualizar(campo, valor) {
-    setForm(prev => ({ ...prev, [campo]: valor }))
+  function actualizar(campo, valor) { setForm(actual => ({ ...actual, [campo]: valor })) }
+  function siguiente(nuevoPaso) { setError(''); setPaso(nuevoPaso) }
+  function validarPasoUno() {
+    if (!form.nombre || !form.email || !form.password || !form.whatsapp) return setError('Completa todos los campos para continuar.')
+    if (form.password.length < 6) return setError('La contraseña debe tener al menos 6 caracteres.')
+    siguiente(2)
   }
-
-  function agregarTag(e) {
-    if (e.key === ',' || e.key === 'Enter') {
-      e.preventDefault()
-      const nuevo = form.tagsInput.replace(',', '').trim().toLowerCase()
-      if (nuevo && !form.tags.includes(nuevo)) {
-        setForm(prev => ({ ...prev, tags: [...prev.tags, nuevo], tagsInput: '' }))
-      } else {
-        setForm(prev => ({ ...prev, tagsInput: '' }))
-      }
-    }
+  function validarPasoDos() {
+    if (!form.nombreNegocio || !form.categoria || !form.whatsappNegocio) return setError('Completa el nombre, categoría y WhatsApp de tu negocio.')
+    siguiente(3)
   }
-
-  function quitarTag(tag) {
-    setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
+  function agregarTag(event) {
+    if (event.key !== ',' && event.key !== 'Enter') return
+    event.preventDefault()
+    const tag = form.tagsInput.replace(',', '').trim().toLowerCase()
+    if (tag && !form.tags.includes(tag)) actualizar('tags', [...form.tags, tag])
+    actualizar('tagsInput', '')
   }
+  function quitarTag(tag) { actualizar('tags', form.tags.filter(item => item !== tag)) }
 
   async function handleSubmit() {
-    setCargando(true)
-    setError('')
+    const photosValidation = validatePhotoFiles(form.fotosFiles)
+    const menuValidation = validateMenuFile(form.cartaFile)
+    if (photosValidation.error || menuValidation.error) {
+      setError(photosValidation.error || menuValidation.error)
+      return
+    }
+    setCargando(true); setError('')
     try {
-      // 1. Crear cuenta en Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-    email: form.email,
-    password: form.password,
-    })
-    if (authError) throw authError
-
-    // Iniciar sesión inmediatamente después del registro
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-    email: form.email,
-    password: form.password,
-    })
-    if (loginError) throw loginError
-
-    const userId = authData.user.id
-
-      // 2. Crear perfil en tabla usuarios
-      const { error: userError } = await supabase.from('usuarios').insert({
-        id: userId,
-        nombre: form.nombre,
-        whatsapp: form.whatsapp,
-      })
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password })
+      if (authError || !authData.user) throw authError || new Error('No pudimos crear tu cuenta.')
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
+      if (loginError) throw loginError
+      const userId = authData.user.id
+      const { error: userError } = await supabase.from('usuarios').insert({ id: userId, nombre: form.nombre, whatsapp: form.whatsapp })
       if (userError) throw userError
-
-      // 3. Crear el negocio
-      const { data: negocio, error: negocioError } = await supabase
-        .from('negocios')
-        .insert({
-          usuario_id:   userId,
-          nombre:       form.nombreNegocio,
-          categoria:    form.categoria,
-          direccion:    form.direccion,
-          whatsapp:     form.whatsappNegocio,
-          horario:      form.horario,
-        })
-        .select()
-        .single()
+      const { data: negocio, error: negocioError } = await supabase.from('negocios').insert({ usuario_id: userId, nombre: form.nombreNegocio, categoria: form.categoria, direccion: form.direccion, whatsapp: form.whatsappNegocio, horario: form.horario }).select().single()
       if (negocioError) throw negocioError
-
-      const negocioId = negocio.id
-
-      // 4. Insertar tags
-      if (form.tags.length > 0) {
-        const tagsData = form.tags.map(valor => ({ negocio_id: negocioId, valor }))
-        await supabase.from('tags').insert(tagsData)
+      if (form.tags.length) {
+        const { error: tagsError } = await supabase.from('tags').insert(form.tags.map(valor => ({ negocio_id: negocio.id, valor })))
+        if (tagsError) throw tagsError
       }
-
-      // 5. Subir fotos de comida
-      for (const foto of form.fotosFiles) {
-        const ext  = foto.name.split('.').pop()
-        const path = `${negocioId}/${Date.now()}.${ext}`
-        const { data: uploaded } = await supabase.storage
-          .from('fotos-comida')
-          .upload(path, foto)
-        if (uploaded) {
-          const { data: urlData } = supabase.storage
-            .from('fotos-comida')
-            .getPublicUrl(path)
-          await supabase.from('fotos_comida').insert({
-            negocio_id: negocioId,
-            url: urlData.publicUrl,
-          })
-        }
+      for (const [indice, foto] of form.fotosFiles.entries()) {
+        const extension = foto.name.split('.').pop()
+        const path = `${negocio.id}/${Date.now()}-${indice}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('fotos-comida').upload(path, foto)
+        if (uploadError) throw uploadError
+        const { data: urlData } = supabase.storage.from('fotos-comida').getPublicUrl(path)
+        const { error: fotoError } = await supabase.from('fotos_comida').insert({ negocio_id: negocio.id, url: urlData.publicUrl })
+        if (fotoError) throw fotoError
       }
-
-      // 6. Subir carta
       if (form.cartaFile) {
-        const ext  = form.cartaFile.name.split('.').pop()
-        const path = `${negocioId}/carta.${ext}`
-        const tipo = ext === 'pdf' ? 'pdf' : 'foto'
-        const { data: uploaded } = await supabase.storage
-          .from('cartas-menu')
-          .upload(path, form.cartaFile)
-        if (uploaded) {
-          const { data: urlData } = supabase.storage
-            .from('cartas-menu')
-            .getPublicUrl(path)
-          await supabase.from('cartas').insert({
-            negocio_id: negocioId,
-            url: urlData.publicUrl,
-            tipo,
-          })
-        }
+        const extension = form.cartaFile.name.split('.').pop()
+        const path = `${negocio.id}/carta-${Date.now()}.${extension}`
+        const { error: uploadError } = await supabase.storage.from('cartas-menu').upload(path, form.cartaFile)
+        if (uploadError) throw uploadError
+        const { data: urlData } = supabase.storage.from('cartas-menu').getPublicUrl(path)
+        const { error: cartaError } = await supabase.from('cartas').insert({ negocio_id: negocio.id, url: urlData.publicUrl, tipo: extension?.toLowerCase() === 'pdf' ? 'pdf' : 'foto' })
+        if (cartaError) throw cartaError
       }
-
-      router.push(`/negocio/${negocioId}?nuevo=true`)
+      router.push(`/negocio/${negocio.id}?nuevo=true`)
     } catch (err) {
-      setError(err.message || 'Ocurrió un error. Intenta de nuevo.')
+      setError(err.message || 'Ocurrió un error al publicar. Inténtalo de nuevo.')
       setCargando(false)
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAF8] pb-10">
-
-      {/* Header */}
-      <header className="px-4 pt-6 pb-4 flex items-center justify-between">
-        <a href="/" className="text-[#5F5E5A] text-sm">← Volver</a>
-        <span className="text-sm text-[#888780]">Paso {paso} de 4</span>
-      </header>
-
-      {/* Barra de progreso */}
-      <div className="px-4 mb-6">
-        <div className="h-1.5 bg-[#E8E6E0] rounded-full overflow-hidden">
-          <div
-            className="h-full bg-[#E8593C] rounded-full transition-all duration-300"
-            style={{ width: `${(paso / 4) * 100}%` }}
-          />
+    <main className="min-h-screen px-4 py-5 sm:px-8">
+      <div className="mx-auto max-w-2xl">
+        <header className="flex items-center justify-between">
+          <Logo />
+          <span className="text-sm font-medium text-ink-subtle">Paso {paso} de {PASOS.length}</span>
+        </header>
+        <Stepper paso={paso} />
+        <div className="card p-5 sm:p-8">
+          {paso === 1 && <Cuenta form={form} actualizar={actualizar} mostrarPassword={mostrarPassword} setMostrarPassword={setMostrarPassword} onNext={validarPasoUno} />}
+          {paso === 2 && <Negocio form={form} actualizar={actualizar} onBack={() => siguiente(1)} onNext={validarPasoDos} />}
+          {paso === 3 && <Productos form={form} actualizar={actualizar} agregarTag={agregarTag} quitarTag={quitarTag} onBack={() => siguiente(2)} onNext={() => { if (!form.tags.length) return setError('Agrega al menos un producto para que te puedan encontrar.'); siguiente(4) }} onSkip={() => siguiente(4)} />}
+          {paso === 4 && <Confirmacion form={form} onBack={() => siguiente(3)} onSubmit={handleSubmit} cargando={cargando} />}
+          {error && <p role="alert" className="mt-5 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">{error}</p>}
         </div>
-        <div className="flex justify-between mt-2">
-          {[1,2,3,4].map(n => (
-            <div key={n} className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium
-              ${n < paso ? 'bg-[#E8593C] text-white' : n === paso ? 'bg-[#E8593C] text-white ring-4 ring-[#FAECE7]' : 'bg-[#E8E6E0] text-[#888780]'}`}>
-              {n < paso ? '✓' : n}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-4">
-
-        {/* ── PASO 1: Cuenta ── */}
-        {paso === 1 && (
-          <div>
-            <h2 className="text-lg font-semibold text-[#2C2C2A] mb-1">Crea tu cuenta</h2>
-            <p className="text-sm text-[#888780] mb-6">Gratis, sin tarjeta de crédito</p>
-            <Campo label="Nombre completo" value={form.nombre} onChange={v => actualizar('nombre', v)} placeholder="Tu nombre" />
-            <Campo label="Correo electrónico" value={form.email} onChange={v => actualizar('email', v)} placeholder="tu@correo.com" type="email" />
-            <Campo label="Contraseña" value={form.password} onChange={v => actualizar('password', v)} placeholder="Mínimo 6 caracteres" type="password" />
-            <Campo label="Tu WhatsApp" value={form.whatsapp} onChange={v => actualizar('whatsapp', v)} placeholder="+57 300 000 0000" hint="Este número será tu contacto principal" />
-            <Boton onClick={() => {
-              if (!form.nombre || !form.email || !form.password || !form.whatsapp) return setError('Completa todos los campos')
-              setError(''); setPaso(2)
-            }}>Continuar →</Boton>
-            <p className="text-center text-sm text-[#888780] mt-4">
-              ¿Ya tienes cuenta? <a href="/login" className="text-[#E8593C]">Inicia sesión</a>
-            </p>
-          </div>
-        )}
-
-        {/* ── PASO 2: Info del negocio ── */}
-        {paso === 2 && (
-          <div>
-            <h2 className="text-lg font-semibold text-[#2C2C2A] mb-1">Tu negocio</h2>
-            <p className="text-sm text-[#888780] mb-6">Cuéntanos sobre tu local</p>
-            <Campo label="Nombre del local" value={form.nombreNegocio} onChange={v => actualizar('nombreNegocio', v)} placeholder="Ej: Donde Marta" />
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-[#5F5E5A] mb-2">Categoría principal</label>
-              <div className="grid grid-cols-2 gap-2">
-                {CATEGORIAS.map(cat => (
-                  <button key={cat.valor} type="button"
-                    onClick={() => actualizar('categoria', cat.valor)}
-                    className={`py-2.5 px-3 rounded-xl text-sm border transition-colors text-left
-                      ${form.categoria === cat.valor
-                        ? 'bg-[#FAECE7] border-[#E8593C] text-[#993C1D] font-medium'
-                        : 'bg-white border-[#D3D1C7] text-[#5F5E5A]'}`}>
-                    {cat.emoji} {cat.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Campo label="Dirección o punto de referencia" value={form.direccion} onChange={v => actualizar('direccion', v)} placeholder="Ej: Cra 5 con Calle 18, frente al parque" />
-            <Campo label="WhatsApp del negocio" value={form.whatsappNegocio} onChange={v => actualizar('whatsappNegocio', v)} placeholder="+57 300 000 0000" />
-            <Campo label="Horario de atención" value={form.horario} onChange={v => actualizar('horario', v)} placeholder="Ej: Lun-Sáb 10am-9pm" />
-            <div className="flex gap-3">
-              <Boton secundario onClick={() => setPaso(1)}>← Atrás</Boton>
-              <Boton onClick={() => {
-                if (!form.nombreNegocio || !form.categoria) return setError('Pon el nombre y categoría del negocio')
-                setError(''); setPaso(3)
-              }}>Continuar →</Boton>
-            </div>
-          </div>
-        )}
-
-        {/* ── PASO 3: Lo que vendes ── */}
-        {paso === 3 && (
-          <div>
-            <h2 className="text-lg font-semibold text-[#2C2C2A] mb-1">Lo que vendes</h2>
-            <p className="text-sm text-[#888780] mb-6">Esto es lo que los clientes van a buscar para encontrarte</p>
-
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-[#5F5E5A] mb-1">¿Qué vendes?</label>
-              <input
-                type="text"
-                value={form.tagsInput}
-                onChange={e => actualizar('tagsInput', e.target.value)}
-                onKeyDown={agregarTag}
-                placeholder="Escribe un producto y presiona coma o Enter"
-                className="w-full bg-white border border-[#E8593C] rounded-xl py-3 px-4 text-sm text-[#2C2C2A] placeholder-[#B4B2A9] focus:outline-none"
-              />
-              <p className="text-xs text-[#888780] mt-1">Ej: hamburguesa, salchipapa, jugo de corozo</p>
-              {form.tags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {form.tags.map(tag => (
-                    <span key={tag} className="flex items-center gap-1 bg-[#FAECE7] text-[#993C1D] text-xs px-3 py-1 rounded-full">
-                      {tag}
-                      <button type="button" onClick={() => quitarTag(tag)} className="text-[#993C1D] font-bold">×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-[#5F5E5A] mb-1">
-                Fotos de tu comida <span className="text-[#B4B2A9] font-normal">(opcional)</span>
-              </label>
-              <label className="block w-full bg-white border border-dashed border-[#D3D1C7] rounded-xl p-4 text-center cursor-pointer hover:border-[#E8593C] transition-colors">
-                <span className="text-2xl block mb-1">📷</span>
-                <span className="text-sm text-[#5F5E5A]">
-                  {form.fotosFiles.length > 0 ? `${form.fotosFiles.length} foto(s) seleccionada(s)` : 'Subir fotos de tu comida'}
-                </span>
-                <input type="file" accept="image/*" multiple className="hidden"
-                  onChange={e => actualizar('fotosFiles', Array.from(e.target.files))} />
-              </label>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-xs font-medium text-[#5F5E5A] mb-1">
-                Carta del menú <span className="text-[#B4B2A9] font-normal">(opcional)</span>
-              </label>
-              <label className="block w-full bg-white border border-dashed border-[#D3D1C7] rounded-xl p-4 text-center cursor-pointer hover:border-[#E8593C] transition-colors">
-                <span className="text-2xl block mb-1">📄</span>
-                <span className="text-sm text-[#5F5E5A]">
-                  {form.cartaFile ? form.cartaFile.name : 'Subir foto o PDF de tu carta'}
-                </span>
-                <input type="file" accept="image/*,.pdf" className="hidden"
-                  onChange={e => actualizar('cartaFile', e.target.files[0])} />
-              </label>
-              <p className="text-xs text-[#888780] mt-1 text-center">
-                <button type="button" onClick={() => setPaso(4)} className="underline">Completar esto después</button>
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <Boton secundario onClick={() => setPaso(2)}>← Atrás</Boton>
-              <Boton onClick={() => {
-                if (form.tags.length === 0) return setError('Agrega al menos un producto')
-                setError(''); setPaso(4)
-              }}>Continuar →</Boton>
-            </div>
-          </div>
-        )}
-
-        {/* ── PASO 4: Confirmación ── */}
-        {paso === 4 && (
-          <div>
-            <h2 className="text-lg font-semibold text-[#2C2C2A] mb-1">Confirma tu negocio</h2>
-            <p className="text-sm text-[#888780] mb-4">Así va a aparecer en la plataforma</p>
-
-            <div className="bg-white border border-[#D3D1C7] rounded-2xl overflow-hidden mb-6">
-              <div className="h-24 bg-[#FAEEDA] flex items-center justify-center text-5xl">🍽️</div>
-              <div className="p-4">
-                <p className="font-semibold text-[#2C2C2A] text-base">{form.nombreNegocio}</p>
-                <p className="text-sm text-[#888780] mb-3">{CATEGORIAS.find(c => c.valor === form.categoria)?.emoji} {CATEGORIAS.find(c => c.valor === form.categoria)?.label} · Ciénaga</p>
-                {form.horario && <p className="text-sm text-[#5F5E5A] mb-1">🕐 {form.horario}</p>}
-                {form.direccion && <p className="text-sm text-[#5F5E5A] mb-3">📍 {form.direccion}</p>}
-                <div className="flex flex-wrap gap-2">
-                  {form.tags.map(tag => (
-                    <span key={tag} className="text-xs px-3 py-1 rounded-full bg-[#FAECE7] text-[#993C1D]">{tag}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {error && <p className="text-red-500 text-sm mb-3 text-center">{error}</p>}
-
-            <Boton onClick={handleSubmit} disabled={cargando}>
-              {cargando ? 'Publicando...' : '¡Publicar mi negocio! 🎉'}
-            </Boton>
-            <Boton secundario onClick={() => setPaso(3)}>← Editar</Boton>
-          </div>
-        )}
-
-        {error && paso !== 4 && (
-          <p className="text-red-500 text-sm mt-3 text-center">{error}</p>
-        )}
+        {paso === 1 && <p className="mt-6 text-center text-sm text-ink-muted">¿Ya tienes un perfil? <Link href="/login" className="font-semibold text-brand-dark hover:underline">Ingresa aquí</Link></p>}
       </div>
     </main>
   )
 }
 
-// ── Componentes reutilizables del formulario ──────────────────
-
-function Campo({ label, value, onChange, placeholder, type = 'text', hint }) {
+function Encabezado({ eyebrow, titulo, intro }) {
   return (
-    <div className="mb-4">
-      <label className="block text-xs font-medium text-[#5F5E5A] mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full bg-white border border-[#D3D1C7] rounded-xl py-3 px-4 text-sm text-[#2C2C2A] placeholder-[#B4B2A9] focus:outline-none focus:border-[#E8593C] transition-colors"
-      />
-      {hint && <p className="text-xs text-[#888780] mt-1">{hint}</p>}
+    <>
+      <p className="eyebrow">{eyebrow}</p>
+      <h1 className="mt-2 text-[28px] font-bold leading-tight tracking-[-0.04em] sm:text-3xl">{titulo}</h1>
+      <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{intro}</p>
+    </>
+  )
+}
+
+function Cuenta({ form, actualizar, mostrarPassword, setMostrarPassword, onNext }) {
+  return (
+    <section>
+      <Encabezado eyebrow="Tu cuenta" titulo="Empecemos con lo básico" intro="Tu cuenta te permitirá actualizar tu negocio cuando quieras." />
+      <div className="mt-7">
+        <Field id="nombre" label="Nombre completo" value={form.nombre} onChange={valor => actualizar('nombre', valor)} placeholder="Tu nombre" autoComplete="name" />
+        <Field id="email" label="Correo electrónico" type="email" value={form.email} onChange={valor => actualizar('email', valor)} placeholder="tu@correo.com" autoComplete="email" />
+        <div className="mb-5">
+          <label htmlFor="password" className="label">Contraseña</label>
+          <div className="relative">
+            <input id="password" type={mostrarPassword ? 'text' : 'password'} value={form.password} onChange={event => actualizar('password', event.target.value)} placeholder="Mínimo 6 caracteres" autoComplete="new-password" className="input pr-20" />
+            <button type="button" onClick={() => setMostrarPassword(valor => !valor)} className="absolute inset-y-1 right-1 rounded-lg px-3 text-xs font-semibold text-ink-muted transition hover:bg-chip hover:text-ink">{mostrarPassword ? 'Ocultar' : 'Ver'}</button>
+          </div>
+        </div>
+        <Field id="whatsapp" label="Tu WhatsApp" value={form.whatsapp} onChange={valor => actualizar('whatsapp', valor)} placeholder="+57 300 000 0000" hint="Solo lo usaremos para administrar tu perfil." autoComplete="tel" />
+      </div>
+      <button type="button" onClick={onNext} className="btn-primary w-full">Continuar</button>
+    </section>
+  )
+}
+
+function Negocio({ form, actualizar, onBack, onNext }) {
+  return (
+    <section>
+      <Encabezado eyebrow="Tu negocio" titulo="Haz que te reconozcan" intro="Estos datos serán visibles para quienes buscan dónde comer." />
+      <div className="mt-7">
+        <Field id="nombre-negocio" label="Nombre del negocio" value={form.nombreNegocio} onChange={valor => actualizar('nombreNegocio', valor)} placeholder="Donde Marta" />
+        <fieldset className="mb-5">
+          <legend className="label">Categoría principal</legend>
+          <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {CATEGORIAS.map(categoria => {
+              const activa = form.categoria === categoria.valor
+              return (
+                <button key={categoria.valor} type="button" aria-pressed={activa} onClick={() => actualizar('categoria', categoria.valor)} className={`flex min-h-12 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition ${activa ? 'border-ink bg-ink text-white' : 'border-line-strong bg-white text-ink hover:border-ink'}`}>
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${activa ? 'bg-white/15 text-white' : categoria.tono}`}><Icon name={categoria.icono} size={16} /></span>
+                  {categoria.label}
+                </button>
+              )
+            })}
+          </div>
+        </fieldset>
+        <Field id="direccion" label="Dirección o punto de referencia" value={form.direccion} onChange={valor => actualizar('direccion', valor)} placeholder="Frente al parque principal" hint="Ayuda a tus clientes a encontrarte." />
+        <Field id="whatsapp-negocio" label="WhatsApp del negocio" value={form.whatsappNegocio} onChange={valor => actualizar('whatsappNegocio', valor)} placeholder="+57 300 000 0000" autoComplete="tel" />
+        <Field id="horario" label="Horario de atención" value={form.horario} onChange={valor => actualizar('horario', valor)} placeholder="Lun–Sáb, 10 a. m. – 9 p. m." />
+      </div>
+      <Actions onBack={onBack} onNext={onNext} />
+    </section>
+  )
+}
+
+function Productos({ form, actualizar, agregarTag, quitarTag, onBack, onNext, onSkip }) {
+  return (
+    <section>
+      <Encabezado eyebrow="Lo que vendes" titulo="Que te encuentren por tus platos" intro="Agrega los productos que alguien escribiría para encontrar tu negocio." />
+      <div className="mt-7">
+        <label htmlFor="tags" className="label">Productos</label>
+        <input id="tags" value={form.tagsInput} onChange={event => actualizar('tagsInput', event.target.value)} onKeyDown={agregarTag} placeholder="Escribe un producto y presiona Enter" className="input" />
+        <p className="mt-2 text-xs text-ink-subtle">Por ejemplo: hamburguesa, salchipapa, jugo de corozo.</p>
+        {form.tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {form.tags.map(tag => (
+              <span key={tag} className="flex h-9 items-center gap-1.5 rounded-full bg-chip pl-3.5 pr-1.5 text-sm font-medium">
+                {tag}
+                <button type="button" onClick={() => quitarTag(tag)} aria-label={`Quitar ${tag}`} className="flex h-6 w-6 items-center justify-center rounded-full text-ink-muted transition hover:bg-line hover:text-ink"><Icon name="x" size={14} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mt-7 grid gap-3 sm:grid-cols-2">
+          <Upload label="Fotos de tu comida" detail="Puedes agregar varias. Las buenas fotos hacen la diferencia." accept="image/jpeg,image/png,image/webp" multiple files={form.fotosFiles} onChange={files => actualizar('fotosFiles', files)} icon="camera" />
+          <Upload label="Carta del menú" detail="Una foto o PDF. Puedes hacerlo después." accept="image/jpeg,image/png,image/webp,.pdf" files={form.cartaFile ? [form.cartaFile] : []} onChange={files => actualizar('cartaFile', files[0] || null)} icon="menu" />
+        </div>
+      </div>
+      <Actions onBack={onBack} onNext={onNext} />
+      <button type="button" onClick={onSkip} className="mt-2 h-11 w-full rounded-xl text-sm font-medium text-ink-muted transition hover:bg-chip hover:text-ink">Completar fotos y carta después</button>
+    </section>
+  )
+}
+
+function Confirmacion({ form, onBack, onSubmit, cargando }) {
+  const categoria = obtenerCategoria(form.categoria)
+  return (
+    <section>
+      <Encabezado eyebrow="Último paso" titulo="Revisa tu perfil" intro="Así aparecerá para las personas que buscan comida en Ciénaga." />
+      <div className="mt-7 overflow-hidden rounded-[20px] border border-line">
+        <div aria-hidden="true" className={`flex h-32 items-center justify-center ${categoria.tono}`}><Icon name={categoria.icono} size={52} strokeWidth={1.4} /></div>
+        <div className="p-5">
+          <span className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold ${categoria.tono}`}>{categoria.label}</span>
+          <h2 className="mt-3 text-xl font-bold tracking-[-0.02em]">{form.nombreNegocio}</h2>
+          <p className="mt-1 text-sm text-ink-subtle">Ciénaga, Magdalena</p>
+          {(form.horario || form.direccion) && (
+            <dl className="mt-4 space-y-1 text-sm">
+              {form.horario && <div className="flex gap-2"><dt className="text-ink-subtle">Horario:</dt><dd>{form.horario}</dd></div>}
+              {form.direccion && <div className="flex gap-2"><dt className="text-ink-subtle">Ubicación:</dt><dd>{form.direccion}</dd></div>}
+            </dl>
+          )}
+          {form.tags.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{form.tags.map(tag => <span key={tag} className="flex h-[26px] items-center rounded-lg bg-chip-soft px-2.5 text-xs text-ink-muted">{tag}</span>)}</div>}
+        </div>
+      </div>
+      <p className="mt-4 text-center text-xs leading-relaxed text-ink-subtle">Podrás modificar toda esta información, fotos y productos más adelante.</p>
+      <Actions onBack={onBack} onNext={onSubmit} nextLabel={cargando ? 'Publicando…' : 'Publicar mi negocio'} disabled={cargando} />
+    </section>
+  )
+}
+
+function Stepper({ paso }) {
+  return (
+    <div className="my-8">
+      <div className="h-1.5 overflow-hidden rounded-full bg-line">
+        <div className="h-full rounded-full bg-brand transition-all duration-300" style={{ width: `${(paso / PASOS.length) * 100}%` }} />
+      </div>
+      <ol className="mt-3 grid grid-cols-4 gap-2">
+        {PASOS.map((label, indice) => {
+          const estado = indice + 1 < paso ? 'hecho' : indice + 1 === paso ? 'actual' : 'pendiente'
+          return (
+            <li key={label} aria-current={estado === 'actual' ? 'step' : undefined} className={`flex items-center justify-center gap-1.5 text-xs font-medium ${estado === 'pendiente' ? 'text-ink-subtle' : 'text-ink'}`}>
+              {estado === 'hecho' && <Icon name="check" size={14} className="text-ok" />}
+              {label}
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 }
 
-function Boton({ children, onClick, secundario, disabled }) {
+function Field({ id, label, type = 'text', value, onChange, placeholder, hint, autoComplete }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-full py-3 rounded-xl text-sm font-medium mb-2 transition-colors
-        ${secundario
-          ? 'bg-white border border-[#D3D1C7] text-[#2C2C2A] hover:bg-[#F5F4F0]'
-          : 'bg-[#E8593C] text-white hover:bg-[#D14E34] disabled:opacity-60'}`}>
-      {children}
-    </button>
+    <div className="mb-5">
+      <label htmlFor={id} className="label">{label}</label>
+      <input id={id} type={type} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} className="input" />
+      {hint && <p className="mt-1.5 text-xs text-ink-subtle">{hint}</p>}
+    </div>
+  )
+}
+
+function Upload({ label, detail, accept, multiple = false, files, onChange, icon }) {
+  return (
+    <label className="flex cursor-pointer flex-col rounded-2xl border border-dashed border-line-strong bg-paper p-4 transition hover:border-ink">
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-ink"><Icon name={icon} /></span>
+      <span className="mt-3 block text-sm font-semibold">{label}</span>
+      <span className="mt-1 block text-xs leading-relaxed text-ink-subtle">{files.length ? `${files.length} archivo${files.length > 1 ? 's' : ''} seleccionado${files.length > 1 ? 's' : ''}` : detail}</span>
+      <span className="mt-3 inline-flex h-8 w-fit items-center rounded-lg bg-white px-3 text-xs font-semibold text-ink ring-1 ring-line-strong">Elegir archivo</span>
+      <input type="file" accept={accept} multiple={multiple} className="sr-only" onChange={event => onChange(Array.from(event.target.files || []))} />
+    </label>
+  )
+}
+
+function Actions({ onBack, onNext, nextLabel = 'Continuar', disabled }) {
+  return (
+    <div className="mt-7 flex gap-3">
+      {onBack && <button type="button" onClick={onBack} className="btn-secondary">Atrás</button>}
+      <button type="button" onClick={onNext} disabled={disabled} className="btn-primary flex-1">{nextLabel}</button>
+    </div>
   )
 }
