@@ -5,6 +5,7 @@ import SiteHeader from '@/components/ui/SiteHeader'
 import BackButton from '@/components/ui/BackButton'
 import Icon from '@/components/ui/Icon'
 import { Estado } from '@/components/ui/NegocioCard'
+import GaleriaFotos from '@/components/ui/GaleriaFotos'
 import { obtenerCategoria } from '@/lib/categorias'
 
 export async function generateMetadata({ params }) {
@@ -130,26 +131,7 @@ function Galeria({ fotos, nombre, categoria }) {
       </div>
     )
   }
-  const [principal, ...otras] = fotos
-  const laterales = otras.slice(0, 2)
-  return (
-    <div className={`grid gap-2 sm:h-[26rem] ${laterales.length ? 'sm:grid-cols-[2fr_1fr]' : ''}`}>
-      <a href={principal.url} target="_blank" rel="noopener noreferrer" className="relative block h-72 overflow-hidden bg-chip sm:h-full sm:rounded-3xl">
-        <img src={principal.url} alt={`Foto principal de ${nombre}`} className="h-full w-full object-cover" />
-        {fotos.length > 1 && <span className="absolute bottom-4 right-4 rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white sm:hidden">{fotos.length} fotos</span>}
-      </a>
-      {laterales.length > 0 && (
-        <div className="hidden gap-2 sm:grid">
-          {laterales.map((foto, indice) => (
-            <a key={foto.url} href={foto.url} target="_blank" rel="noopener noreferrer" aria-label={`Ver foto ${indice + 2} de ${nombre}`} className="relative block overflow-hidden rounded-3xl bg-chip">
-              <img src={foto.url} alt="" className="h-full w-full object-cover transition hover:scale-105" />
-              {indice === laterales.length - 1 && fotos.length > 3 && <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-sm font-semibold text-white">+{fotos.length - 3} fotos</span>}
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+  return <GaleriaFotos fotos={fotos} nombre={nombre} />
 }
 
 function InfoCard({ icon, label, value, href }) {
