@@ -28,6 +28,14 @@ export default async function Home({ searchParams }) {
   const resto = listaNegocios.filter(negocio => !destacados.includes(negocio))
   const sinNegocios = listaNegocios.length === 0 && categoriaActiva === 'todos'
 
+  // Los bloques de categoría siempre resumen todos los negocios, aunque haya un filtro activo.
+  let todosLosNegocios = listaNegocios
+  if (categoriaActiva !== 'todos') {
+    const { data } = await supabase.from('negocios').select('categoria, abierto_ahora, calificacion_promedio, fotos_comida(url)').order('calificacion_promedio', { ascending: false })
+    todosLosNegocios = data || []
+  }
+  const resumen = resumirCategorias(todosLosNegocios)
+
   return (
     <>
       <SiteHeader />
@@ -46,7 +54,7 @@ export default async function Home({ searchParams }) {
               {POPULARES.map(antojo => <Link key={antojo} href={`/buscar?q=${encodeURIComponent(antojo)}`} className="flex h-8 items-center rounded-full bg-chip px-3 text-ink transition hover:bg-line">{antojo}</Link>)}
             </div>
           </div>
-          <CategoriaTiles activa={categoriaActiva} />
+          <CategoriaTiles activa={categoriaActiva} resumen={resumen} />
         </section>
 
         {sinNegocios ? <EstadoVacio /> : (
@@ -87,33 +95,72 @@ export default async function Home({ searchParams }) {
   )
 }
 
-function CategoriaTiles({ activa }) {
-  const [principal, ...otras] = CATEGORIAS_FILTRO
+// Por categoría: cuántos negocios hay, cuántos están abiertos y una foto representativa
+// (la del negocio mejor calificado con foto, prefiriendo uno abierto). Llega ordenado por calificación.
+function resumirCategorias(negocios) {
+  const resumen = Object.fromEntries(CATEGORIAS_FILTRO.map(categoria => [categoria.valor, { total: 0, abiertos: 0, foto: null, fotoAbierto: false }]))
+  for (const negocio of negocios) {
+    const datos = resumen[negocio.categoria]
+    if (!datos) continue
+    datos.total++
+    if (negocio.abierto_ahora) datos.abiertos++
+    const foto = negocio.fotos_comida?.[0]?.url
+    if (foto && (!datos.foto || (negocio.abierto_ahora && !datos.fotoAbierto))) {
+      datos.foto = foto
+      datos.fotoAbierto = Boolean(negocio.abierto_ahora)
+    }
+  }
+  return resumen
+}
+
+function CategoriaTiles({ activa, resumen }) {
+  // La categoría con más negocios ocupa el bloque grande; el resto mantiene su orden.
+  const ordenadas = [...CATEGORIAS_FILTRO].sort((a, b) => resumen[b.valor].total - resumen[a.valor].total)
   return (
     <nav aria-label="Categorías" className="grid min-w-0 grid-cols-3 gap-2 sm:gap-3 lg:flex-1 lg:grid-cols-2">
-      <Link href={`/?categoria=${principal.valor}#negocios`} aria-current={activa === principal.valor ? 'page' : undefined} className="flex h-[84px] flex-col justify-between rounded-2xl bg-brand p-3 text-white transition hover:bg-brand-dark sm:h-28 sm:p-4 lg:row-span-2 lg:h-auto lg:min-h-[280px] lg:rounded-[22px] lg:p-5">
-        <Icon name={principal.icono} size={44} strokeWidth={1.6} className="h-6 w-6 sm:h-8 sm:w-8 lg:h-11 lg:w-11" />
-        <span>
-          <span className="block text-[13px] font-semibold sm:text-base lg:text-[22px] lg:font-bold lg:tracking-[-0.02em]"><span className="lg:hidden">{principal.corto}</span><span className="hidden lg:inline">{principal.label}</span></span>
-          <span className="mt-1 hidden text-sm text-brand-tint lg:block">{principal.detalle}</span>
-        </span>
-      </Link>
-      {otras.map((categoria, indice) => {
-        const oscura = indice === otras.length - 1
-        return (
-          <Link key={categoria.valor} href={`/?categoria=${categoria.valor}#negocios`} aria-current={activa === categoria.valor ? 'page' : undefined} className={`flex h-[84px] flex-col justify-between rounded-2xl p-3 transition sm:h-28 sm:p-4 lg:h-[134px] lg:rounded-[22px] ${oscura ? 'bg-ink text-white hover:bg-ink-soft' : 'border border-line bg-white text-ink hover:border-line-strong'} ${activa === categoria.valor ? 'ring-2 ring-brand ring-offset-2 ring-offset-paper' : ''}`}>
-            <span className={`flex h-8 w-8 items-center justify-center rounded-[10px] sm:h-10 sm:w-10 sm:rounded-xl ${categoria.tono}`}>
-              <Icon name={categoria.icono} size={18} />
-            </span>
-            <span className="text-[13px] font-semibold sm:text-base"><span className="lg:hidden">{categoria.corto}</span><span className="hidden lg:inline">{categoria.label}</span></span>
-          </Link>
-        )
-      })}
-      <Link href="/buscar" className="flex h-[84px] flex-col justify-between rounded-2xl bg-chip p-3 text-ink transition hover:bg-line sm:h-28 sm:p-4 lg:hidden">
+      {ordenadas.map((categoria, indice) => <CategoriaTile key={categoria.valor} categoria={categoria} datos={resumen[categoria.valor]} grande={indice === 0} activa={activa === categoria.valor} />)}
+      <Link href="/buscar" className="flex h-[104px] flex-col justify-between rounded-2xl bg-chip p-3 text-ink transition hover:bg-line sm:h-32 sm:p-4 lg:hidden">
         <Icon name="arrowRight" size={22} />
         <span className="text-[13px] font-semibold sm:text-base">Ver todo</span>
       </Link>
     </nav>
+  )
+}
+
+function CategoriaTile({ categoria, datos, grande, activa }) {
+  const { total, abiertos, foto } = datos
+  const tamano = grande ? 'lg:row-span-2 lg:h-auto lg:min-h-[280px] lg:p-5' : 'lg:h-[134px]'
+  const anillo = activa ? 'ring-2 ring-brand ring-offset-2 ring-offset-paper' : ''
+  const nombre = <><span className="lg:hidden">{categoria.corto}</span><span className="hidden lg:inline">{categoria.label}</span></>
+  const detalle = total === 0
+    ? 'Sin locales aún'
+    : <>{total} {total === 1 ? 'lugar' : 'lugares'}{abiertos > 0 && <span className="hidden sm:inline"> · {abiertos} {abiertos === 1 ? 'abierto' : 'abiertos'}</span>}</>
+
+  if (foto) {
+    return (
+      <Link href={`/?categoria=${categoria.valor}#negocios`} aria-current={activa ? 'page' : undefined} className={`group relative flex h-[104px] flex-col justify-end overflow-hidden rounded-2xl bg-ink p-3 text-white sm:h-32 sm:p-4 lg:rounded-[22px] ${tamano} ${anillo}`}>
+        <img src={foto} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        <span aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/0" />
+        {abiertos > 0 && <span className="absolute right-2.5 top-2.5 hidden h-6 items-center gap-1.5 rounded-full bg-white/90 px-2 text-[11px] font-semibold text-ok sm:flex"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-ok-dot" />{abiertos} {abiertos === 1 ? 'abierto' : 'abiertos'}</span>}
+        <span className="relative">
+          <span className={`block font-semibold leading-tight ${grande ? 'text-sm sm:text-base lg:text-[26px] lg:font-bold lg:tracking-[-0.02em]' : 'text-sm sm:text-base'}`}>{nombre}</span>
+          <span className="mt-0.5 block text-xs text-white/80 sm:text-[13px]">{total} {total === 1 ? 'lugar' : 'lugares'}</span>
+        </span>
+      </Link>
+    )
+  }
+
+  const vacia = total === 0
+  return (
+    <Link href={`/?categoria=${categoria.valor}#negocios`} aria-current={activa ? 'page' : undefined} className={`flex h-[104px] flex-col justify-between rounded-2xl border p-3 transition sm:h-32 sm:p-4 lg:rounded-[22px] ${tamano} ${anillo} ${vacia ? 'border-dashed border-line-strong bg-transparent text-ink-muted hover:border-ink' : 'border-line bg-white text-ink hover:border-line-strong'}`}>
+      <span className={`flex h-8 w-8 items-center justify-center rounded-[10px] sm:h-10 sm:w-10 sm:rounded-xl ${categoria.tono}`}>
+        <Icon name={categoria.icono} size={18} />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold leading-tight sm:text-base">{nombre}</span>
+        <span className="mt-0.5 block text-xs text-ink-subtle sm:text-[13px]">{detalle}</span>
+      </span>
+    </Link>
   )
 }
 
