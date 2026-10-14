@@ -10,7 +10,7 @@ export default function Buscador({ valorInicial = '', compacto = false }) {
 
   function handleSubmit(event) {
     event.preventDefault()
-    if (query.trim()) router.push(`/buscar?q=${encodeURIComponent(query.trim())}`)
+    router.push(query.trim() ? `/buscar?q=${encodeURIComponent(query.trim())}` : '/buscar')
   }
 
   return (
@@ -23,7 +23,7 @@ export default function Buscador({ valorInicial = '', compacto = false }) {
           type="search"
           value={query}
           onChange={event => setQuery(event.target.value)}
-          placeholder="Hamburguesa, sancocho, jugo de corozo…"
+          placeholder="Un plato o el nombre de un negocio…"
           className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-subtle/80"
         />
         <button type="submit" aria-label="Buscar" className={`flex shrink-0 items-center justify-center rounded-xl bg-brand font-semibold text-white transition hover:bg-brand-dark ${compacto ? 'h-9 w-9' : 'h-10 w-10 sm:h-12 sm:w-auto sm:px-[22px]'}`}>
