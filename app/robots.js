@@ -1,3 +1,5 @@
+import { SITE_URL } from '@/lib/sitio'
+
 export default function robots() {
   return {
     rules: {
@@ -5,6 +7,6 @@ export default function robots() {
       allow: '/',
       disallow: ['/dashboard', '/dashboard/editar'],
     },
-    sitemap: 'https://comidascienaga.com/sitemap.xml',
+    sitemap: `${SITE_URL}/sitemap.xml`,
   }
 }

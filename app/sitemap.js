@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { SITE_URL } from '@/lib/sitio'
 
 export default async function sitemap() {
   const supabase = await createClient()
@@ -6,7 +7,7 @@ export default async function sitemap() {
     .from('negocios')
     .select('id, created_at')
 
-  const baseUrl = 'https://comidascienaga.com'
+  const baseUrl = SITE_URL
 
   const negociosUrls = negocios?.map(negocio => ({
     url: `${baseUrl}/negocio/${negocio.id}`,
