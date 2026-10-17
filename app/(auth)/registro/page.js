@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { validateMenuFile, validatePhotoFiles } from '@/lib/uploads'
 import { CATEGORIAS, obtenerCategoria } from '@/lib/categorias'
+import { horarioInicial, resumenHorario, tieneHorario, validarHorario } from '@/lib/horario'
+import EditorHorario from '@/components/forms/EditorHorario'
 import Logo from '@/components/ui/Logo'
 import Icon from '@/components/ui/Icon'
 
@@ -18,7 +20,7 @@ export default function RegistroPage() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
   const [mostrarPassword, setMostrarPassword] = useState(false)
-  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horario: '', tagsInput: '', tags: [], cartaFile: null, fotosFiles: [] })
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horarios: horarioInicial(), tagsInput: '', tags: [], cartaFile: null, fotosFiles: [] })
 
   function actualizar(campo, valor) { setForm(actual => ({ ...actual, [campo]: valor })) }
   function siguiente(nuevoPaso) { setError(''); setPaso(nuevoPaso) }
@@ -29,6 +31,8 @@ export default function RegistroPage() {
   }
   function validarPasoDos() {
     if (!form.nombreNegocio || !form.categoria || !form.whatsappNegocio) return setError('Completa el nombre, categoría y WhatsApp de tu negocio.')
+    const errorHorario = validarHorario(form.horarios)
+    if (errorHorario) return setError(errorHorario)
     siguiente(3)
   }
   function agregarTag(event) {
@@ -56,7 +60,7 @@ export default function RegistroPage() {
       const userId = authData.user.id
       const { error: userError } = await supabase.from('usuarios').insert({ id: userId, nombre: form.nombre, whatsapp: form.whatsapp })
       if (userError) throw userError
-      const { data: negocio, error: negocioError } = await supabase.from('negocios').insert({ usuario_id: userId, nombre: form.nombreNegocio, categoria: form.categoria, direccion: form.direccion, whatsapp: form.whatsappNegocio, horario: form.horario }).select().single()
+      const { data: negocio, error: negocioError } = await supabase.from('negocios').insert({ usuario_id: userId, nombre: form.nombreNegocio, categoria: form.categoria, direccion: form.direccion, whatsapp: form.whatsappNegocio, horarios: form.horarios, horario: resumenHorario(form.horarios) }).select().single()
       if (negocioError) throw negocioError
       if (form.tags.length) {
         const { error: tagsError } = await supabase.from('tags').insert(form.tags.map(valor => ({ negocio_id: negocio.id, valor })))
@@ -161,7 +165,11 @@ function Negocio({ form, actualizar, onBack, onNext }) {
         </fieldset>
         <Field id="direccion" label="Dirección o punto de referencia" value={form.direccion} onChange={valor => actualizar('direccion', valor)} placeholder="Frente al parque principal" hint="Ayuda a tus clientes a encontrarte." />
         <Field id="whatsapp-negocio" label="WhatsApp del negocio" value={form.whatsappNegocio} onChange={valor => actualizar('whatsappNegocio', valor)} placeholder="+57 300 000 0000" autoComplete="tel" />
-        <Field id="horario" label="Horario de atención" value={form.horario} onChange={valor => actualizar('horario', valor)} placeholder="Lun–Sáb, 10 a. m. – 9 p. m." />
+        <fieldset className="mb-5">
+          <legend className="label">Horario de atención</legend>
+          <p className="mb-3 text-xs text-ink-subtle">Con tu horario, tu negocio aparecerá como abierto o cerrado automáticamente.</p>
+          <EditorHorario valor={form.horarios} onChange={valor => actualizar('horarios', valor)} />
+        </fieldset>
       </div>
       <Actions onBack={onBack} onNext={onNext} />
     </section>
@@ -208,9 +216,9 @@ function Confirmacion({ form, onBack, onSubmit, cargando }) {
           <span className={`inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold ${categoria.tono}`}>{categoria.label}</span>
           <h2 className="mt-3 text-xl font-bold tracking-[-0.02em]">{form.nombreNegocio}</h2>
           <p className="mt-1 text-sm text-ink-subtle">Ciénaga, Magdalena</p>
-          {(form.horario || form.direccion) && (
+          {(tieneHorario(form.horarios) || form.direccion) && (
             <dl className="mt-4 space-y-1 text-sm">
-              {form.horario && <div className="flex gap-2"><dt className="text-ink-subtle">Horario:</dt><dd>{form.horario}</dd></div>}
+              {tieneHorario(form.horarios) && <div className="flex gap-2"><dt className="shrink-0 text-ink-subtle">Horario:</dt><dd>{resumenHorario(form.horarios)}</dd></div>}
               {form.direccion && <div className="flex gap-2"><dt className="text-ink-subtle">Ubicación:</dt><dd>{form.direccion}</dd></div>}
             </dl>
           )}

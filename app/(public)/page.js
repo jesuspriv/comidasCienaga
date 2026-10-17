@@ -5,6 +5,7 @@ import NegocioCard from '@/components/ui/NegocioCard'
 import SiteHeader from '@/components/ui/SiteHeader'
 import Icon from '@/components/ui/Icon'
 import { CATEGORIAS_FILTRO, esCategoriaValida, obtenerCategoria } from '@/lib/categorias'
+import { conEstado } from '@/lib/horario'
 
 export const metadata = {
   title: 'ComidasCiénaga — Encuentra dónde comer en Ciénaga, Magdalena',
@@ -23,7 +24,7 @@ export default async function Home({ searchParams }) {
   let consulta = supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })
   if (categoriaActiva !== 'todos') consulta = consulta.eq('categoria', categoriaActiva)
   const { data: negocios } = await consulta
-  const listaNegocios = negocios || []
+  const listaNegocios = conEstado(negocios)
   const destacados = listaNegocios.filter(negocio => negocio.abierto_ahora).slice(0, MAX_DESTACADOS)
   const resto = listaNegocios.filter(negocio => !destacados.includes(negocio))
   const sinNegocios = listaNegocios.length === 0 && categoriaActiva === 'todos'
@@ -31,8 +32,8 @@ export default async function Home({ searchParams }) {
   // Los bloques de categoría siempre resumen todos los negocios, aunque haya un filtro activo.
   let todosLosNegocios = listaNegocios
   if (categoriaActiva !== 'todos') {
-    const { data } = await supabase.from('negocios').select('categoria, abierto_ahora, calificacion_promedio, fotos_comida(url)').order('calificacion_promedio', { ascending: false })
-    todosLosNegocios = data || []
+    const { data } = await supabase.from('negocios').select('categoria, abierto_ahora, horarios, pausado_hasta, calificacion_promedio, fotos_comida(url)').order('calificacion_promedio', { ascending: false })
+    todosLosNegocios = conEstado(data)
   }
   const resumen = resumirCategorias(todosLosNegocios)
 

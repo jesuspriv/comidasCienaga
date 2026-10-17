@@ -5,6 +5,7 @@ import Buscador from '@/components/ui/Buscador'
 import SiteHeader from '@/components/ui/SiteHeader'
 import Icon from '@/components/ui/Icon'
 import { CATEGORIAS_FILTRO, esCategoriaValida, obtenerCategoria } from '@/lib/categorias'
+import { conEstado } from '@/lib/horario'
 
 export const metadata = {
   title: 'Buscar comida — ComidasCiénaga',
@@ -28,14 +29,14 @@ export default async function BuscarPage({ searchParams }) {
     consulta = consulta.in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000'])
   }
   if (categoria !== 'todos') consulta = consulta.eq('categoria', categoria)
-  if (soloAbiertos) consulta = consulta.eq('abierto_ahora', true)
   const [{ data }, { data: todos }] = await Promise.all([
     consulta,
     // Resumen general para el panel lateral: siempre sobre todos los negocios.
-    supabase.from('negocios').select('id, nombre, abierto_ahora, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }),
+    supabase.from('negocios').select('id, nombre, abierto_ahora, horarios, pausado_hasta, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }),
   ])
-  const negocios = data || []
-  const abiertos = (todos || []).filter(negocio => negocio.abierto_ahora)
+  // Abierto/cerrado se calcula con el horario, así que ese filtro se aplica aquí y no en la consulta.
+  const negocios = conEstado(data).filter(negocio => !soloAbiertos || negocio.abierto_ahora)
+  const abiertos = conEstado(todos).filter(negocio => negocio.abierto_ahora)
   const masVendidos = productosMasVendidos(todos || [])
   const ideas = masVendidos.length ? masVendidos : ANTOJOS
 

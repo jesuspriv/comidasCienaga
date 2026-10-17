@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Aviso, Cargando, PanelHeader } from '@/components/dashboard/PanelUI'
 import Icon from '@/components/ui/Icon'
 import { obtenerCategoria } from '@/lib/categorias'
+import { estadoNegocio, finDeJornada, horarioInicial, resumenHorario, tieneHorario, validarHorario } from '@/lib/horario'
+import EditorHorario from '@/components/forms/EditorHorario'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -18,6 +20,15 @@ export default function DashboardPage() {
   const [mensaje, setMensaje] = useState(null)
   const [confirmarEliminar, setConfirmarEliminar] = useState(false)
   const [eliminando, setEliminando] = useState(false)
+  // Horario en edición; null mientras un negocio sin horario no decida configurarlo.
+  const [horarios, setHorarios] = useState(null)
+  // Se actualiza cada minuto para que el estado (abierto/cerrado) siga al reloj.
+  const [ahora, setAhora] = useState(() => new Date())
+
+  useEffect(() => {
+    const intervalo = window.setInterval(() => setAhora(new Date()), 60_000)
+    return () => window.clearInterval(intervalo)
+  }, [])
 
   useEffect(() => {
     let activo = true
@@ -28,6 +39,7 @@ export default function DashboardPage() {
       if (!activo) return
       if (error || !data) return router.replace('/registro')
       setNegocio(data)
+      setHorarios(tieneHorario(data.horarios) ? data.horarios : null)
       setCargando(false)
     }
     cargarNegocio()
@@ -55,11 +67,33 @@ export default function DashboardPage() {
     setCambiandoEstado(false)
   }
 
+  // "Cerrar por hoy" pausa el horario hasta mañana a las 5 a. m.; `null` lo reanuda.
+  async function pausar(hasta) {
+    if (!negocio || cambiandoEstado) return
+    setCambiandoEstado(true)
+    const pausado_hasta = hasta ? hasta.toISOString() : null
+    const { error } = await supabase.from('negocios').update({ pausado_hasta }).eq('id', negocio.id)
+    if (error) {
+      mostrarMensaje('error', 'No pudimos actualizar tu disponibilidad. Inténtalo de nuevo.')
+    } else {
+      setNegocio(actual => ({ ...actual, pausado_hasta }))
+      mostrarMensaje('success', hasta ? 'Listo, hoy apareces como cerrado. Mañana vuelves a tu horario.' : 'Volviste a tu horario normal.')
+    }
+    setCambiandoEstado(false)
+  }
+
   async function guardarCambios(event) {
     event.preventDefault()
+    if (horarios) {
+      const errorHorario = validarHorario(horarios)
+      if (errorHorario) return mostrarMensaje('error', errorHorario)
+    }
     setGuardando(true)
-    const { error } = await supabase.from('negocios').update({ nombre: negocio.nombre.trim(), direccion: negocio.direccion?.trim() || null, whatsapp: negocio.whatsapp?.trim() || null, horario: negocio.horario?.trim() || null }).eq('id', negocio.id)
+    const cambios = { nombre: negocio.nombre.trim(), direccion: negocio.direccion?.trim() || null, whatsapp: negocio.whatsapp?.trim() || null }
+    if (horarios) Object.assign(cambios, { horarios, horario: resumenHorario(horarios) })
+    const { error } = await supabase.from('negocios').update(cambios).eq('id', negocio.id)
     setGuardando(false)
+    if (!error) setNegocio(actual => ({ ...actual, ...cambios }))
     mostrarMensaje(error ? 'error' : 'success', error ? 'No pudimos guardar los cambios. Inténtalo de nuevo.' : 'Información guardada correctamente.')
   }
 
@@ -110,19 +144,7 @@ export default function DashboardPage() {
 
         {mensaje && <Aviso mensaje={mensaje} />}
 
-        <section className={`mt-6 rounded-3xl p-5 text-white sm:p-7 ${negocio.abierto_ahora ? 'bg-ok' : 'bg-ink'}`}>
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-white/70">Disponibilidad</p>
-              <h2 className="mt-1 text-2xl font-bold tracking-[-0.03em]">{negocio.abierto_ahora ? 'Tu negocio está abierto' : 'Tu negocio está cerrado'}</h2>
-              <p className="mt-1.5 max-w-md text-sm leading-relaxed text-white/75">{negocio.abierto_ahora ? 'Los clientes te ven en "Abiertos para ti" y en el filtro "Abiertos ahora".' : 'Actívalo cuando estés listo para recibir pedidos.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={negocio.abierto_ahora} onClick={toggleAbierto} disabled={cambiandoEstado} className="flex h-12 items-center gap-3 self-start rounded-2xl bg-white/15 px-4 text-sm font-semibold transition hover:bg-white/25 disabled:cursor-wait disabled:opacity-60 sm:self-auto">
-              <span className={`relative h-7 w-12 rounded-full transition ${negocio.abierto_ahora ? 'bg-white' : 'bg-white/30'}`}><span className={`absolute top-1 h-5 w-5 rounded-full shadow transition-all ${negocio.abierto_ahora ? 'left-6 bg-ok' : 'left-1 bg-white'}`} /></span>
-              {cambiandoEstado ? 'Guardando…' : negocio.abierto_ahora ? 'Abierto' : 'Abrir ahora'}
-            </button>
-          </div>
-        </section>
+        <Disponibilidad negocio={negocio} estado={estadoNegocio(negocio, ahora)} ocupado={cambiandoEstado} onToggleManual={toggleAbierto} onCerrarHoy={() => pausar(finDeJornada())} onReanudar={() => pausar(null)} />
 
         <section className="mt-4 grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
           <div className="card p-5 sm:p-6">
@@ -167,7 +189,21 @@ export default function DashboardPage() {
             <Campo id="campo-nombre" label="Nombre del negocio" value={negocio.nombre} onChange={valor => setNegocio(actual => ({ ...actual, nombre: valor }))} />
             <Campo id="campo-whatsapp" label="WhatsApp del negocio" value={negocio.whatsapp || ''} onChange={valor => setNegocio(actual => ({ ...actual, whatsapp: valor }))} placeholder="+57 300 000 0000" />
             <Campo id="campo-direccion" label="Dirección o punto de referencia" value={negocio.direccion || ''} onChange={valor => setNegocio(actual => ({ ...actual, direccion: valor }))} placeholder="Frente al parque principal" />
-            <Campo id="campo-horario" label="Horario de atención" value={negocio.horario || ''} onChange={valor => setNegocio(actual => ({ ...actual, horario: valor }))} placeholder="Lun–Sáb, 10 a. m. – 9 p. m." />
+            <fieldset className="sm:col-span-2">
+              <legend className="label">Horario de atención</legend>
+              {horarios ? (
+                <>
+                  <p className="mb-3 text-xs text-ink-subtle">Tu negocio aparece abierto o cerrado automáticamente según este horario.</p>
+                  <EditorHorario valor={horarios} onChange={setHorarios} />
+                </>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-line-strong bg-paper p-4">
+                  {negocio.horario && <p className="text-sm">Horario actual: <span className="text-ink-muted">{negocio.horario}</span></p>}
+                  <p className="mt-1 text-sm text-ink-subtle">Configura tu horario por días para que tu negocio se abra y cierre solo en la página.</p>
+                  <button type="button" onClick={() => setHorarios(horarioInicial())} className="btn-dark mt-3 h-11">Configurar horario</button>
+                </div>
+              )}
+            </fieldset>
             <div className="sm:col-span-2"><button type="submit" disabled={guardando} className="btn-primary w-full sm:w-auto">{guardando ? 'Guardando…' : 'Guardar cambios'}</button></div>
           </form>
         </section>
@@ -193,9 +229,53 @@ export default function DashboardPage() {
 }
 
 function calcularPerfil(negocio) {
-  const secciones = [{ completa: Boolean(negocio.nombre), nombre: 'nombre' }, { completa: Boolean(negocio.whatsapp), nombre: 'WhatsApp' }, { completa: Boolean(negocio.direccion), nombre: 'ubicación' }, { completa: Boolean(negocio.horario), nombre: 'horario' }, { completa: Boolean(negocio.tags?.length), nombre: 'productos' }, { completa: Boolean(negocio.fotos_comida?.length), nombre: 'fotos' }, { completa: Boolean(negocio.cartas?.length), nombre: 'carta' }]
+  const secciones = [{ completa: Boolean(negocio.nombre), nombre: 'nombre' }, { completa: Boolean(negocio.whatsapp), nombre: 'WhatsApp' }, { completa: Boolean(negocio.direccion), nombre: 'ubicación' }, { completa: tieneHorario(negocio.horarios), nombre: 'horario' }, { completa: Boolean(negocio.tags?.length), nombre: 'productos' }, { completa: Boolean(negocio.fotos_comida?.length), nombre: 'fotos' }, { completa: Boolean(negocio.cartas?.length), nombre: 'carta' }]
   const completos = secciones.filter(seccion => seccion.completa).length
   return { completos, total: secciones.length, porcentaje: Math.round((completos / secciones.length) * 100), faltantes: secciones.filter(seccion => !seccion.completa).map(seccion => seccion.nombre) }
+}
+
+// Tarjeta de disponibilidad. Con horario, el estado es automático y solo se puede cerrar por hoy;
+// sin horario, se mantiene el interruptor manual de antes.
+function Disponibilidad({ negocio, estado, ocupado, onToggleManual, onCerrarHoy, onReanudar }) {
+  const { abierto } = estado
+  let titulo = abierto ? 'Tu negocio está abierto' : 'Tu negocio está cerrado'
+  let detalle = abierto ? 'Los clientes te ven en "Abiertos para ti" y en el filtro "Abiertos ahora".' : 'Actívalo cuando estés listo para recibir pedidos.'
+  let accion = null
+
+  if (estado.automatico) {
+    if (estado.pausado) {
+      titulo = 'Cerrado por hoy'
+      detalle = 'Mañana vuelves a abrir según tu horario.'
+      accion = <button type="button" onClick={onReanudar} disabled={ocupado} className="h-12 self-start rounded-2xl bg-white px-5 text-sm font-semibold text-ink transition hover:bg-white/90 disabled:opacity-60 sm:self-auto">{ocupado ? 'Guardando…' : 'Volver a mi horario'}</button>
+    } else {
+      detalle = `${estado.texto} · Se actualiza solo según tu horario.`
+      const abreMasTardeHoy = !abierto && estado.texto?.startsWith('Abre hoy')
+      if (abierto || abreMasTardeHoy) {
+        accion = <button type="button" onClick={onCerrarHoy} disabled={ocupado} className="h-12 self-start rounded-2xl bg-white/15 px-5 text-sm font-semibold transition hover:bg-white/25 disabled:opacity-60 sm:self-auto">{ocupado ? 'Guardando…' : abierto ? 'Cerrar por hoy' : 'Hoy no voy a abrir'}</button>
+      }
+    }
+  } else {
+    accion = (
+      <button type="button" role="switch" aria-checked={abierto} onClick={onToggleManual} disabled={ocupado} className="flex h-12 items-center gap-3 self-start rounded-2xl bg-white/15 px-4 text-sm font-semibold transition hover:bg-white/25 disabled:cursor-wait disabled:opacity-60 sm:self-auto">
+        <span className={`relative h-7 w-12 rounded-full transition ${abierto ? 'bg-white' : 'bg-white/30'}`}><span className={`absolute top-1 h-5 w-5 rounded-full shadow transition-all ${abierto ? 'left-6 bg-ok' : 'left-1 bg-white'}`} /></span>
+        {ocupado ? 'Guardando…' : abierto ? 'Abierto' : 'Abrir ahora'}
+      </button>
+    )
+  }
+
+  return (
+    <section className={`mt-6 rounded-3xl p-5 text-white sm:p-7 ${abierto ? 'bg-ok' : 'bg-ink'}`}>
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-medium text-white/70">Disponibilidad{estado.automatico && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold text-white">Automática</span>}</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-[-0.03em]">{titulo}</h2>
+          <p className="mt-1.5 max-w-md text-sm leading-relaxed text-white/75">{detalle}</p>
+          {!estado.automatico && <p className="mt-2 max-w-md text-xs text-white/60">Configura tu horario abajo y no tendrás que abrir y cerrar a mano.</p>}
+        </div>
+        {accion}
+      </div>
+    </section>
+  )
 }
 
 function Campo({ id, label, value, onChange, placeholder }) {
