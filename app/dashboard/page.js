@@ -10,6 +10,8 @@ import { obtenerCategoria } from '@/lib/categorias'
 import { estadoNegocio, finDeJornada, horarioInicial, resumenHorario, tieneHorario, validarHorario } from '@/lib/horario'
 import EditorHorario from '@/components/forms/EditorHorario'
 import EditorPedidos from '@/components/forms/EditorPedidos'
+import CompartirNegocio from '@/components/dashboard/CompartirNegocio'
+import { REDES, normalizarRedes, redInvalida } from '@/lib/redes'
 import { normalizarPedidos, pedidosIniciales, validarPedidos } from '@/lib/pedidos'
 
 export default function DashboardPage() {
@@ -25,6 +27,8 @@ export default function DashboardPage() {
   // Horario en edición; null mientras un negocio sin horario no decida configurarlo.
   const [horarios, setHorarios] = useState(null)
   const [pedidos, setPedidos] = useState(pedidosIniciales)
+  // Usuarios de redes tal como los escribe el dueño; al guardar se limpian.
+  const [redes, setRedes] = useState({})
   const [guardandoPedidos, setGuardandoPedidos] = useState(false)
   // Se actualiza cada minuto para que el estado (abierto/cerrado) siga al reloj.
   const [ahora, setAhora] = useState(() => new Date())
@@ -45,6 +49,7 @@ export default function DashboardPage() {
       setNegocio(data)
       setHorarios(tieneHorario(data.horarios) ? data.horarios : null)
       if (data.pedidos) setPedidos({ ...pedidosIniciales(), ...data.pedidos })
+      setRedes(data.redes || {})
       setCargando(false)
     }
     cargarNegocio()
@@ -93,12 +98,17 @@ export default function DashboardPage() {
       const errorHorario = validarHorario(horarios)
       if (errorHorario) return mostrarMensaje('error', errorHorario)
     }
+    const redMala = redInvalida(redes)
+    if (redMala) return mostrarMensaje('error', `No reconocemos tu usuario de ${redMala.label}. Escribe solo el usuario, por ejemplo @tunegocio, o pega el enlace de tu perfil.`)
     setGuardando(true)
-    const cambios = { nombre: negocio.nombre.trim(), direccion: negocio.direccion?.trim() || null, whatsapp: negocio.whatsapp?.trim() || null }
+    const cambios = { nombre: negocio.nombre.trim(), direccion: negocio.direccion?.trim() || null, whatsapp: negocio.whatsapp?.trim() || null, redes: normalizarRedes(redes) }
     if (horarios) Object.assign(cambios, { horarios, horario: resumenHorario(horarios) })
     const { error } = await supabase.from('negocios').update(cambios).eq('id', negocio.id)
     setGuardando(false)
-    if (!error) setNegocio(actual => ({ ...actual, ...cambios }))
+    if (!error) {
+      setNegocio(actual => ({ ...actual, ...cambios }))
+      setRedes(cambios.redes || {})
+    }
     mostrarMensaje(error ? 'error' : 'success', error ? 'No pudimos guardar los cambios. Inténtalo de nuevo.' : 'Información guardada correctamente.')
   }
 
@@ -202,6 +212,8 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        <CompartirNegocio negocioId={negocio.id} nombre={negocio.nombre} />
+
         <section className="card mt-10 p-5 sm:p-6">
           <h2 className="text-xl font-bold tracking-[-0.02em]">Cómo te piden</h2>
           <p className="mt-1 text-sm text-ink-subtle">Aparece en tu tarjeta, en tu perfil y en el mensaje de WhatsApp que te envían.</p>
@@ -219,6 +231,21 @@ export default function DashboardPage() {
             <Campo id="campo-nombre" label="Nombre del negocio" value={negocio.nombre} onChange={valor => setNegocio(actual => ({ ...actual, nombre: valor }))} />
             <Campo id="campo-whatsapp" label="WhatsApp del negocio" value={negocio.whatsapp || ''} onChange={valor => setNegocio(actual => ({ ...actual, whatsapp: valor }))} placeholder="+57 300 000 0000" />
             <Campo id="campo-direccion" label="Dirección o punto de referencia" value={negocio.direccion || ''} onChange={valor => setNegocio(actual => ({ ...actual, direccion: valor }))} placeholder="Frente al parque principal" />
+            <fieldset className="sm:col-span-2">
+              <legend className="label">Redes sociales <span className="font-normal text-ink-subtle">(opcional)</span></legend>
+              <p className="mb-3 text-xs text-ink-subtle">Escribe tu usuario o pega el enlace de tu perfil. Aparecerán como botones en tu perfil.</p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {REDES.map(red => (
+                  <div key={red.clave}>
+                    <label htmlFor={`red-${red.clave}`} className="mb-1.5 flex items-center gap-2 text-sm font-medium"><span className={`flex h-6 w-6 items-center justify-center rounded-md ${red.estilo}`}><Icon name={red.clave} size={14} strokeWidth={2.2} /></span>{red.label}</label>
+                    <div className="flex h-12 items-center rounded-xl border border-line-strong bg-white px-3 focus-within:border-ink focus-within:ring-4 focus-within:ring-ink/10">
+                      <span className="text-ink-subtle">@</span>
+                      <input id={`red-${red.clave}`} value={(redes[red.clave] || '').replace(/^@/, '')} onChange={event => setRedes(actual => ({ ...actual, [red.clave]: event.target.value }))} placeholder="tunegocio" autoCapitalize="none" autoCorrect="off" className="min-w-0 flex-1 bg-transparent pl-1 text-base outline-none placeholder:text-ink-subtle/80" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
             <fieldset className="sm:col-span-2">
               <legend className="label">Horario de atención</legend>
               {horarios ? (

@@ -10,6 +10,7 @@ import { obtenerCategoria } from '@/lib/categorias'
 import { estadoNegocio, semana, tieneHorario } from '@/lib/horario'
 import { etiquetaPago, resumenEntrega, textoCostoDomicilio, tienePedidos } from '@/lib/pedidos'
 import PedirWhatsApp from '@/components/ui/PedirWhatsApp'
+import { enlacesRedes } from '@/lib/redes'
 
 export async function generateMetadata({ params }) {
   const { id } = await params
@@ -36,6 +37,7 @@ export default async function PerfilNegocio({ params }) {
   const whatsapp = negocio.whatsapp?.replace(/\D/g, '')
   const pedidos = tienePedidos(negocio.pedidos) ? negocio.pedidos : null
   const entrega = resumenEntrega(pedidos)
+  const redes = enlacesRedes(negocio.redes)
   const mapaUrl = negocio.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${negocio.direccion}, Ciénaga, Magdalena`)}` : null
   const calificacion = Number(negocio.calificacion_promedio)
   const perfilVacio = !fotos.length && !tags.length && !cartas.length
@@ -69,6 +71,17 @@ export default async function PerfilNegocio({ params }) {
               <div>
                 <h1 className="text-3xl font-bold tracking-[-0.04em] sm:text-[40px] sm:leading-[1.05]">{negocio.nombre}</h1>
                 <p className="mt-2 flex items-center gap-1.5 text-sm text-ink-subtle"><Icon name="pin" size={16} /> Ciénaga, Magdalena</p>
+                {redes.length > 0 && (
+                  <ul aria-label="Redes sociales" className="mt-3 flex flex-wrap gap-2">
+                    {redes.map(red => (
+                      <li key={red.clave}>
+                        <a href={red.url} target="_blank" rel="noopener noreferrer" aria-label={`${red.label} de ${negocio.nombre} (@${red.usuario})`} className={`flex h-10 items-center gap-2 rounded-full pl-3 pr-3.5 text-sm font-semibold shadow-sm transition hover:-translate-y-px hover:opacity-90 ${red.estilo}`}>
+                          <Icon name={red.clave} size={18} strokeWidth={2.2} />{red.label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {calificacion > 0
                 ? <div className="rounded-xl bg-mango-soft px-3 py-2 text-right"><span className="text-sm font-bold text-mango">★ {calificacion.toFixed(1)}</span>{Number(negocio.total_calificaciones) > 0 && <span className="mt-0.5 block text-[11px] text-mango">{negocio.total_calificaciones} reseñas</span>}</div>

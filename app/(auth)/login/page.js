@@ -48,7 +48,10 @@ export default function LoginPage() {
               <input id="login-email" type="email" autoComplete="email" value={form.email} onChange={event => setForm(actual => ({ ...actual, email: event.target.value }))} placeholder="tu@correo.com" className="input" />
             </div>
             <div className="mb-5">
-              <label htmlFor="login-password" className="label">Contraseña</label>
+              <div className="flex items-baseline justify-between gap-3">
+                <label htmlFor="login-password" className="label">Contraseña</label>
+                <Link href="/recuperar" className="text-[13px] font-medium text-brand-dark hover:underline">¿La olvidaste?</Link>
+              </div>
               <div className="relative">
                 <input id="login-password" type={mostrarPassword ? 'text' : 'password'} autoComplete="current-password" value={form.password} onChange={event => setForm(actual => ({ ...actual, password: event.target.value }))} placeholder="Tu contraseña" className="input pr-20" />
                 <button type="button" onClick={() => setMostrarPassword(valor => !valor)} className="absolute inset-y-1 right-1 rounded-lg px-3 text-xs font-semibold text-ink-muted transition hover:bg-chip hover:text-ink">{mostrarPassword ? 'Ocultar' : 'Ver'}</button>
