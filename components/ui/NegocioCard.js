@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import Icon from '@/components/ui/Icon'
 import { obtenerCategoria } from '@/lib/categorias'
+import { resumenEntrega } from '@/lib/pedidos'
 
 export default function NegocioCard({ negocio, modo = 'grid' }) {
   const primeraFoto = negocio.fotos_comida?.[0]?.url
   const tags = negocio.tags?.slice(0, 2) || []
   const categoria = obtenerCategoria(negocio.categoria)
   const calificacion = Number(negocio.calificacion_promedio)
+  const entrega = resumenEntrega(negocio.pedidos)
 
   if (modo === 'fila') {
     return (
@@ -21,6 +23,7 @@ export default function NegocioCard({ negocio, modo = 'grid' }) {
             {categoria.corto}{tags.length > 0 && ` · ${tags.map(tag => tag.valor).join(', ')}`}
           </span>
           <span className="mt-1.5 flex items-center gap-1.5"><Estado abierto={negocio.abierto_ahora} pequeno />{negocio.estado?.texto && <span className="truncate text-xs text-ink-subtle">· {negocio.estado.texto}</span>}</span>
+          {entrega && <span className="mt-1 flex items-center gap-1.5 truncate text-xs font-medium"><Icon name={entrega.domicilio ? 'delivery' : 'store'} size={14} className={entrega.domicilio ? 'shrink-0 text-brand-dark' : 'shrink-0 text-ink-muted'} />{entrega.principal}</span>}
         </span>
       </Link>
     )
@@ -38,6 +41,12 @@ export default function NegocioCard({ negocio, modo = 'grid' }) {
           {calificacion > 0 && <Rating valor={calificacion} />}
         </span>
         <span className="mt-1 block truncate text-sm text-ink-subtle">{categoria.label}{negocio.estado?.texto && <span className={negocio.abierto_ahora ? 'text-ok' : ''}> · {negocio.estado.texto}</span>}</span>
+        {entrega && (
+          <span className="mt-2.5 flex items-center gap-2 text-[13px]">
+            <Icon name={entrega.domicilio ? 'delivery' : 'store'} size={16} className={entrega.domicilio ? 'shrink-0 text-brand-dark' : 'shrink-0 text-ink-muted'} />
+            <span className="truncate"><span className="font-semibold">{entrega.principal}</span>{entrega.detalle && <span className="text-ink-subtle"> · {entrega.detalle}</span>}</span>
+          </span>
+        )}
         {tags.length > 0 && (
           <span className="mt-3 flex flex-wrap gap-1.5">
             {tags.map(tag => <span key={tag.valor} className="flex h-[26px] items-center rounded-lg bg-chip-soft px-2.5 text-xs text-ink-muted">{tag.valor}</span>)}

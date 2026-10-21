@@ -23,7 +23,9 @@ export async function proxy(request) {
     },
   )
 
-  const { data: { claims } } = await supabase.auth.getClaims()
+  // Con una sesión vencida o inválida `data` llega en null: se trata como no autenticado.
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
 
   if (request.nextUrl.pathname.startsWith(DASHBOARD_PATH) && !claims?.sub) {
     const loginUrl = request.nextUrl.clone()

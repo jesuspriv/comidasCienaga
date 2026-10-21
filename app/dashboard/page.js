@@ -9,6 +9,8 @@ import Icon from '@/components/ui/Icon'
 import { obtenerCategoria } from '@/lib/categorias'
 import { estadoNegocio, finDeJornada, horarioInicial, resumenHorario, tieneHorario, validarHorario } from '@/lib/horario'
 import EditorHorario from '@/components/forms/EditorHorario'
+import EditorPedidos from '@/components/forms/EditorPedidos'
+import { normalizarPedidos, pedidosIniciales, validarPedidos } from '@/lib/pedidos'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -22,6 +24,8 @@ export default function DashboardPage() {
   const [eliminando, setEliminando] = useState(false)
   // Horario en edición; null mientras un negocio sin horario no decida configurarlo.
   const [horarios, setHorarios] = useState(null)
+  const [pedidos, setPedidos] = useState(pedidosIniciales)
+  const [guardandoPedidos, setGuardandoPedidos] = useState(false)
   // Se actualiza cada minuto para que el estado (abierto/cerrado) siga al reloj.
   const [ahora, setAhora] = useState(() => new Date())
 
@@ -40,6 +44,7 @@ export default function DashboardPage() {
       if (error || !data) return router.replace('/registro')
       setNegocio(data)
       setHorarios(tieneHorario(data.horarios) ? data.horarios : null)
+      if (data.pedidos) setPedidos({ ...pedidosIniciales(), ...data.pedidos })
       setCargando(false)
     }
     cargarNegocio()
@@ -95,6 +100,21 @@ export default function DashboardPage() {
     setGuardando(false)
     if (!error) setNegocio(actual => ({ ...actual, ...cambios }))
     mostrarMensaje(error ? 'error' : 'success', error ? 'No pudimos guardar los cambios. Inténtalo de nuevo.' : 'Información guardada correctamente.')
+  }
+
+  async function guardarPedidos(event) {
+    event.preventDefault()
+    const limpio = normalizarPedidos(pedidos)
+    const errorPedidos = validarPedidos(limpio)
+    if (errorPedidos) return mostrarMensaje('error', errorPedidos)
+    setGuardandoPedidos(true)
+    const { error } = await supabase.from('negocios').update({ pedidos: limpio }).eq('id', negocio.id)
+    setGuardandoPedidos(false)
+    if (!error) {
+      setNegocio(actual => ({ ...actual, pedidos: limpio }))
+      setPedidos(limpio)
+    }
+    mostrarMensaje(error ? 'error' : 'success', error ? 'No pudimos guardar cómo te piden. Inténtalo de nuevo.' : 'Listo, tu perfil ya muestra cómo pedirte.')
   }
 
   async function cerrarSesion() {
@@ -180,6 +200,16 @@ export default function DashboardPage() {
               </Link>
             ))}
           </div>
+        </section>
+
+        <section className="card mt-10 p-5 sm:p-6">
+          <h2 className="text-xl font-bold tracking-[-0.02em]">Cómo te piden</h2>
+          <p className="mt-1 text-sm text-ink-subtle">Aparece en tu tarjeta, en tu perfil y en el mensaje de WhatsApp que te envían.</p>
+          {!negocio.pedidos && <p className="mt-3 rounded-xl bg-mango-soft px-3.5 py-2.5 text-sm text-mango">Aún no lo configuras. Los clientes no saben si haces domicilio ni cómo pagarte.</p>}
+          <form onSubmit={guardarPedidos} className="mt-5">
+            <EditorPedidos valor={pedidos} onChange={setPedidos} direccion={negocio.direccion} />
+            <button type="submit" disabled={guardandoPedidos} className="btn-primary mt-5 w-full sm:w-auto">{guardandoPedidos ? 'Guardando…' : 'Guardar cómo te piden'}</button>
+          </form>
         </section>
 
         <section className="card mt-10 p-5 sm:p-6">

@@ -8,6 +8,8 @@ import { Estado } from '@/components/ui/NegocioCard'
 import GaleriaFotos from '@/components/ui/GaleriaFotos'
 import { obtenerCategoria } from '@/lib/categorias'
 import { estadoNegocio, semana, tieneHorario } from '@/lib/horario'
+import { etiquetaPago, resumenEntrega, textoCostoDomicilio, tienePedidos } from '@/lib/pedidos'
+import PedirWhatsApp from '@/components/ui/PedirWhatsApp'
 
 export async function generateMetadata({ params }) {
   const { id } = await params
@@ -24,12 +26,16 @@ export default async function PerfilNegocio({ params }) {
   const supabase = await createClient()
   const { data: negocio } = await supabase.from('negocios').select('*, fotos_comida(url), tags(valor), cartas(url, tipo)').eq('id', id).single()
   if (!negocio) return notFound()
+  const { data: sesion } = await supabase.auth.getClaims()
+  const esDueno = Boolean(sesion?.claims?.sub) && sesion.claims.sub === negocio.usuario_id
 
   const fotos = negocio.fotos_comida || []
   const cartas = negocio.cartas || []
   const tags = negocio.tags || []
   const categoria = obtenerCategoria(negocio.categoria)
   const whatsapp = negocio.whatsapp?.replace(/\D/g, '')
+  const pedidos = tienePedidos(negocio.pedidos) ? negocio.pedidos : null
+  const entrega = resumenEntrega(pedidos)
   const mapaUrl = negocio.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${negocio.direccion}, Ciénaga, Magdalena`)}` : null
   const calificacion = Number(negocio.calificacion_promedio)
   const perfilVacio = !fotos.length && !tags.length && !cartas.length
@@ -39,6 +45,14 @@ export default async function PerfilNegocio({ params }) {
   return (
     <>
       <div className="hidden sm:block"><SiteHeader /></div>
+      {esDueno && (
+        <div className="bg-ink text-white">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-8">
+            <p className="flex items-center gap-2 text-sm"><Icon name="eye" size={16} className="shrink-0 text-peach" /><span>Así ven los clientes <span className="hidden sm:inline">tu negocio</span></span></p>
+            <Link href="/dashboard" className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/15 px-3 text-sm font-semibold transition hover:bg-white/25"><Icon name="arrowLeft" size={15} /> Volver a mi panel</Link>
+          </div>
+        </div>
+      )}
       <main className="mx-auto max-w-6xl pb-44 sm:px-8 sm:pb-16 lg:pb-16">
         <section aria-label="Fotos" className="relative sm:pt-6">
           <BackButton className="absolute left-4 top-4 z-10 sm:hidden" />
@@ -84,6 +98,36 @@ export default async function PerfilNegocio({ params }) {
               </section>
             )}
 
+            {pedidos && (
+              <section aria-labelledby="pedir-title" className="mt-10">
+                <h2 id="pedir-title" className="text-xl font-bold tracking-[-0.02em]">Cómo pedir</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {pedidos.domicilio && (
+                    <div className="card p-4">
+                      <p className="flex items-center gap-2.5 text-base font-semibold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand-dark"><Icon name="delivery" /></span>Domicilio</p>
+                      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                        <dt className="text-ink-subtle">Costo</dt><dd className="font-semibold">{textoCostoDomicilio(pedidos).replace('Domicilio ', '').replace(/^./, letra => letra.toUpperCase())}</dd>
+                        <dt className="text-ink-subtle">Tiempo</dt><dd>{pedidos.tiempo}</dd>
+                        <dt className="text-ink-subtle">Llega a</dt><dd>{pedidos.barrios?.length ? pedidos.barrios.join(', ') : 'Pregunta si llega a tu barrio'}</dd>
+                      </dl>
+                    </div>
+                  )}
+                  {pedidos.recoger && (
+                    <div className="card p-4">
+                      <p className="flex items-center gap-2.5 text-base font-semibold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-chip text-ink"><Icon name="store" /></span>Recoger en el local</p>
+                      <p className="mt-3 text-sm leading-relaxed text-ink-muted">{negocio.direccion ? `Pide por WhatsApp y recógelo listo en ${negocio.direccion}.` : 'Pide por WhatsApp y pregunta dónde recogerlo.'}</p>
+                    </div>
+                  )}
+                </div>
+                {pedidos.pagos?.length > 0 && (
+                  <div className="card mt-3 p-4">
+                    <p className="flex items-center gap-2.5 text-base font-semibold"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-ok-soft text-ok"><Icon name="wallet" /></span>Formas de pago</p>
+                    <div className="mt-3 flex flex-wrap gap-2">{pedidos.pagos.map(pago => <span key={pago} className="flex h-9 items-center gap-1.5 rounded-full bg-chip px-3 text-sm"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-ok-dot" />{etiquetaPago(pago)}</span>)}</div>
+                  </div>
+                )}
+              </section>
+            )}
+
             {tags.length > 0 && (
               <section aria-labelledby="venden-title" className="mt-10">
                 <h2 id="venden-title" className="text-xl font-bold tracking-[-0.02em]">Lo que venden</h2>
@@ -122,7 +166,8 @@ export default async function PerfilNegocio({ params }) {
               <div className="card sticky top-24 p-5">
                 <p className="text-sm font-semibold">¿Se te antojó?</p>
                 <p className="mt-1 text-sm text-ink-subtle">{estado.abierto || !estado.texto ? 'Escríbele directo y haz tu pedido.' : `Ahora está cerrado · ${estado.texto}`}</p>
-                {whatsapp && <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noopener noreferrer" className="btn-primary mt-4 w-full"><Icon name="whatsapp" size={18} /> Escribir por WhatsApp</a>}
+                {entrega && <p className="mt-2 text-sm">{entrega.principal}{pedidos.pagos?.length > 0 && <span className="text-ink-subtle"> · {pedidos.pagos.map(etiquetaPago).join(', ')}</span>}</p>}
+                {whatsapp && <div className="mt-4"><PedirWhatsApp nombre={negocio.nombre} whatsapp={negocio.whatsapp} pedidos={pedidos} direccion={negocio.direccion} variante="tarjeta" /></div>}
                 {mapaUrl && <a href={mapaUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary mt-2 w-full"><Icon name="pin" size={18} /> Cómo llegar</a>}
               </div>
             </aside>
@@ -134,7 +179,7 @@ export default async function PerfilNegocio({ params }) {
         <div className="fixed inset-x-0 bottom-[4.6rem] z-40 border-t border-line bg-white/95 p-3 backdrop-blur lg:hidden">
           <div className="mx-auto flex max-w-2xl gap-2">
             {mapaUrl && <a href={mapaUrl} target="_blank" rel="noopener noreferrer" aria-label="Abrir ubicación en Google Maps" className="btn-secondary w-12 shrink-0 px-0"><Icon name="pin" /></a>}
-            {whatsapp && <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noopener noreferrer" className="btn-primary flex-1"><Icon name="whatsapp" size={18} /> Escribir por WhatsApp</a>}
+            {whatsapp && <PedirWhatsApp nombre={negocio.nombre} whatsapp={negocio.whatsapp} pedidos={pedidos} direccion={negocio.direccion} variante="barra" />}
           </div>
         </div>
       )}

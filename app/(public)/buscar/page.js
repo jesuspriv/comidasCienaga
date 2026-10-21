@@ -6,6 +6,7 @@ import SiteHeader from '@/components/ui/SiteHeader'
 import Icon from '@/components/ui/Icon'
 import { CATEGORIAS_FILTRO, esCategoriaValida, obtenerCategoria } from '@/lib/categorias'
 import { conEstado } from '@/lib/horario'
+import { hacePedidosADomicilio } from '@/lib/pedidos'
 
 export const metadata = {
   title: 'Buscar comida — ComidasCiénaga',
@@ -19,8 +20,9 @@ export default async function BuscarPage({ searchParams }) {
   const q = typeof params.q === 'string' ? params.q.trim() : ''
   const categoria = esCategoriaValida(params.categoria) ? params.categoria : 'todos'
   const soloAbiertos = params.estado === 'abierto'
+  const conDomicilio = params.entrega === 'domicilio'
   const supabase = await createClient()
-  const hayFiltros = Boolean(q) || categoria !== 'todos' || soloAbiertos
+  const hayFiltros = Boolean(q) || categoria !== 'todos' || soloAbiertos || conDomicilio
 
   // Sin búsqueda ni filtros se muestran todos los negocios, abiertos y cerrados.
   let consulta = supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })
@@ -35,16 +37,17 @@ export default async function BuscarPage({ searchParams }) {
     supabase.from('negocios').select('id, nombre, abierto_ahora, horarios, pausado_hasta, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }),
   ])
   // Abierto/cerrado se calcula con el horario, así que ese filtro se aplica aquí y no en la consulta.
-  const negocios = conEstado(data).filter(negocio => !soloAbiertos || negocio.abierto_ahora)
+  const negocios = conEstado(data).filter(negocio => (!soloAbiertos || negocio.abierto_ahora) && (!conDomicilio || hacePedidosADomicilio(negocio)))
   const abiertos = conEstado(todos).filter(negocio => negocio.abierto_ahora)
   const masVendidos = productosMasVendidos(todos || [])
   const ideas = masVendidos.length ? masVendidos : ANTOJOS
 
-  function hrefConFiltros({ nuevaCategoria = categoria, nuevosAbiertos = soloAbiertos }) {
+  function hrefConFiltros({ nuevaCategoria = categoria, nuevosAbiertos = soloAbiertos, nuevoDomicilio = conDomicilio }) {
     const next = new URLSearchParams()
     if (q) next.set('q', q)
     if (nuevaCategoria !== 'todos') next.set('categoria', nuevaCategoria)
     if (nuevosAbiertos) next.set('estado', 'abierto')
+    if (nuevoDomicilio) next.set('entrega', 'domicilio')
     const query = next.toString()
     return query ? `/buscar?${query}` : '/buscar'
   }
@@ -61,13 +64,16 @@ export default async function BuscarPage({ searchParams }) {
             <div className="mt-5 max-w-2xl"><Buscador key={q} valorInicial={q} /></div>
             <div className="no-scrollbar -mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
               {opciones.map(opcion => {
-                // "Todo" quita la categoría y también "Abiertos ahora": muestra abiertos y cerrados.
+                // "Todo" quita la categoría y también "Abiertos ahora" y "Con domicilio": muestra todos los negocios.
                 const esTodo = opcion.valor === 'todos'
-                const activa = esTodo ? categoria === 'todos' && !soloAbiertos : opcion.valor === categoria
-                return <Link key={opcion.valor} href={hrefConFiltros(esTodo ? { nuevaCategoria: 'todos', nuevosAbiertos: false } : { nuevaCategoria: opcion.valor })} aria-current={activa ? 'page' : undefined} className={`flex h-10 shrink-0 items-center rounded-[10px] px-3.5 text-sm transition ${activa ? 'bg-ink font-medium text-white' : 'border border-line bg-white text-ink-muted hover:border-line-strong'}`}>{opcion.corto}</Link>
+                const activa = esTodo ? categoria === 'todos' && !soloAbiertos && !conDomicilio : opcion.valor === categoria
+                return <Link key={opcion.valor} href={hrefConFiltros(esTodo ? { nuevaCategoria: 'todos', nuevosAbiertos: false, nuevoDomicilio: false } : { nuevaCategoria: opcion.valor })} aria-current={activa ? 'page' : undefined} className={`flex h-10 shrink-0 items-center rounded-[10px] px-3.5 text-sm transition ${activa ? 'bg-ink font-medium text-white' : 'border border-line bg-white text-ink-muted hover:border-line-strong'}`}>{opcion.corto}</Link>
               })}
               <Link href={hrefConFiltros({ nuevosAbiertos: !soloAbiertos })} aria-pressed={soloAbiertos} className={`flex h-10 shrink-0 items-center gap-2 rounded-[10px] px-3.5 text-sm font-medium transition ${soloAbiertos ? 'bg-ok-soft text-ok ring-1 ring-ok/30' : 'border border-line bg-white text-ink-muted hover:border-line-strong'}`}>
                 <span aria-hidden="true" className={`h-2 w-2 rounded-full ${soloAbiertos ? 'bg-ok-dot' : 'bg-ink-subtle/50'}`} />Abiertos ahora
+              </Link>
+              <Link href={hrefConFiltros({ nuevoDomicilio: !conDomicilio })} aria-pressed={conDomicilio} className={`flex h-10 shrink-0 items-center gap-2 rounded-[10px] px-3.5 text-sm font-medium transition ${conDomicilio ? 'bg-brand-soft text-brand-dark ring-1 ring-brand/30' : 'border border-line bg-white text-ink-muted hover:border-line-strong'}`}>
+                <Icon name="delivery" size={16} />Con domicilio
               </Link>
             </div>
             {!q && (
@@ -80,7 +86,7 @@ export default async function BuscarPage({ searchParams }) {
 
           <section aria-label="Resultados">
             <div className="mb-4 flex items-center justify-between gap-4">
-              <p className="text-sm text-ink-subtle">{negocios.length} {negocios.length === 1 ? 'negocio' : 'negocios'}{categoria !== 'todos' && ` · ${obtenerCategoria(categoria).label}`}{soloAbiertos && ' · abiertos ahora'}</p>
+              <p className="text-sm text-ink-subtle">{negocios.length} {negocios.length === 1 ? 'negocio' : 'negocios'}{categoria !== 'todos' && ` · ${obtenerCategoria(categoria).label}`}{soloAbiertos && ' · abiertos ahora'}{conDomicilio && ' · con domicilio'}</p>
               {hayFiltros && <Link href="/buscar" className="text-sm font-semibold text-brand-dark hover:underline">Limpiar filtros</Link>}
             </div>
             {negocios.length > 0
