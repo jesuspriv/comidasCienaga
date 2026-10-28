@@ -2,6 +2,15 @@
 
 @theme {
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-geist), ui-sans-serif, sans-serif;
+
+  /* Paleta "con más antojo" del inicio: fondo crema, café oscuro y naranja encendido. */
+  --color-crema: #fff4e6;
+  --color-cafe: #1c1512;
+  --color-cafe-muted: #6b5e52;
+  --color-fuego: #ff5a36;
+  --color-fuego-claro: #ff7a50;
+  --color-arena: #efe3d6;
 
   --color-paper: #fafaf7;
   --color-ink: #18181b;
