@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { validateMenuFile, validatePhotoFiles } from '@/lib/uploads'
@@ -13,18 +13,61 @@ import Icon from '@/components/ui/Icon'
 
 const PASOS = ['Cuenta', 'Negocio', 'Productos', 'Publicar']
 
+// Traduce los errores de Supabase más comunes del registro a mensajes claros.
+function mensajeDeError(err) {
+  const texto = String(err?.message || '').toLowerCase()
+  if (texto.includes('already registered') || texto.includes('already been registered')) return 'Ya existe una cuenta con ese correo. Ingresa con tu contraseña y desde ahí podrás publicar tu negocio.'
+  if (texto.includes('email not confirmed')) return 'Te enviamos un correo para confirmar tu cuenta. Confírmalo, ingresa y termina de publicar tu negocio.'
+  if (texto.includes('invalid') && texto.includes('email')) return 'Ese correo no parece válido. Revísalo e inténtalo de nuevo.'
+  if (texto.includes('password')) return 'La contraseña no es válida. Usa al menos 6 caracteres.'
+  if (texto.includes('rate limit') || texto.includes('too many')) return 'Hubo demasiados intentos seguidos. Espera unos minutos e inténtalo de nuevo.'
+  if (texto.includes('duplicate key') && texto.includes('negocios')) return 'Tu cuenta ya tiene un negocio publicado. Ingresa a tu panel para editarlo.'
+  return 'Ocurrió un error al publicar. Inténtalo de nuevo en unos minutos.'
+}
+
 export default function RegistroPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const [supabase] = useState(createClient)
   const [paso, setPaso] = useState(1)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
   const [mostrarPassword, setMostrarPassword] = useState(false)
+  // Si ya hay sesión (cuenta creada pero sin negocio), no se vuelve a crear la cuenta:
+  // { userId, email, tienePerfil }. `verificando` evita mostrar el paso 1 antes de saberlo.
+  const [cuenta, setCuenta] = useState(null)
+  const [verificando, setVerificando] = useState(true)
   const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horarios: horarioInicial(), tagsInput: '', tags: [], cartaFile: null, fotosFiles: [] })
+
+  useEffect(() => {
+    let activo = true
+    async function revisarSesion() {
+      const { data } = await supabase.auth.getUser()
+      const usuario = data?.user
+      if (!usuario) return activo && setVerificando(false)
+      const [{ data: negocio }, { data: perfil }] = await Promise.all([
+        supabase.from('negocios').select('id').eq('usuario_id', usuario.id).maybeSingle(),
+        supabase.from('usuarios').select('nombre, whatsapp').eq('id', usuario.id).maybeSingle(),
+      ])
+      if (!activo) return
+      if (negocio) return router.replace('/dashboard')
+      setCuenta({ userId: usuario.id, email: usuario.email, tienePerfil: Boolean(perfil) })
+      if (perfil) {
+        setForm(actual => ({ ...actual, nombre: perfil.nombre, whatsapp: perfil.whatsapp || '', whatsappNegocio: perfil.whatsapp || '' }))
+        setPaso(2)
+      }
+      setVerificando(false)
+    }
+    revisarSesion()
+    return () => { activo = false }
+  }, [router, supabase])
 
   function actualizar(campo, valor) { setForm(actual => ({ ...actual, [campo]: valor })) }
   function siguiente(nuevoPaso) { setError(''); setPaso(nuevoPaso) }
   function validarPasoUno() {
+    if (cuenta) {
+      if (!form.nombre || !form.whatsapp) return setError('Completa tu nombre y tu WhatsApp para continuar.')
+      return siguiente(2)
+    }
     if (!form.nombre || !form.email || !form.password || !form.whatsapp) return setError('Completa todos los campos para continuar.')
     if (form.password.length < 6) return setError('La contraseña debe tener al menos 6 caracteres.')
     siguiente(2)
@@ -53,13 +96,20 @@ export default function RegistroPage() {
     }
     setCargando(true); setError('')
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password })
-      if (authError || !authData.user) throw authError || new Error('No pudimos crear tu cuenta.')
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
-      if (loginError) throw loginError
-      const userId = authData.user.id
-      const { error: userError } = await supabase.from('usuarios').insert({ id: userId, nombre: form.nombre, whatsapp: form.whatsapp })
-      if (userError) throw userError
+      let userId = cuenta?.userId
+      if (!cuenta) {
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password })
+        if (authError || !authData.user) throw authError || new Error('No pudimos crear tu cuenta.')
+        const { error: loginError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
+        if (loginError) throw loginError
+        userId = authData.user.id
+      }
+      if (!cuenta?.tienePerfil) {
+        const { error: userError } = await supabase.from('usuarios').insert({ id: userId, nombre: form.nombre, whatsapp: form.whatsapp })
+        if (userError) throw userError
+        // Si algo falla más adelante y la persona reintenta, no se vuelve a crear el perfil.
+        setCuenta(actual => ({ userId, email: actual?.email || form.email, tienePerfil: true }))
+      }
       const { data: negocio, error: negocioError } = await supabase.from('negocios').insert({ usuario_id: userId, nombre: form.nombreNegocio, categoria: form.categoria, direccion: form.direccion, whatsapp: form.whatsappNegocio, horarios: form.horarios, horario: resumenHorario(form.horarios) }).select().single()
       if (negocioError) throw negocioError
       if (form.tags.length) {
@@ -86,7 +136,7 @@ export default function RegistroPage() {
       }
       router.push(`/negocio/${negocio.id}?nuevo=true`)
     } catch (err) {
-      setError(err.message || 'Ocurrió un error al publicar. Inténtalo de nuevo.')
+      setError(mensajeDeError(err))
       setCargando(false)
     }
   }
@@ -99,14 +149,21 @@ export default function RegistroPage() {
           <span className="text-sm font-medium text-ink-subtle">Paso {paso} de {PASOS.length}</span>
         </header>
         <Stepper paso={paso} />
+        {cuenta && (
+          <p className="mb-4 flex items-start gap-2.5 rounded-2xl bg-ok-soft px-4 py-3 text-sm text-ok">
+            <Icon name="check" size={18} className="mt-px shrink-0" />
+            <span>Ya ingresaste como <span className="font-semibold">{cuenta.email}</span>. Solo falta publicar tu negocio.</span>
+          </p>
+        )}
         <div className="card p-5 sm:p-8">
-          {paso === 1 && <Cuenta form={form} actualizar={actualizar} mostrarPassword={mostrarPassword} setMostrarPassword={setMostrarPassword} onNext={validarPasoUno} />}
-          {paso === 2 && <Negocio form={form} actualizar={actualizar} onBack={() => siguiente(1)} onNext={validarPasoDos} />}
+          {verificando && <div className="flex justify-center py-10"><span className="block h-8 w-8 animate-spin rounded-full border-4 border-line border-t-brand" /></div>}
+          {!verificando && paso === 1 && <Cuenta form={form} actualizar={actualizar} mostrarPassword={mostrarPassword} setMostrarPassword={setMostrarPassword} onNext={validarPasoUno} soloPerfil={Boolean(cuenta)} />}
+          {!verificando && paso === 2 && <Negocio form={form} actualizar={actualizar} onBack={cuenta?.tienePerfil ? null : () => siguiente(1)} onNext={validarPasoDos} />}
           {paso === 3 && <Productos form={form} actualizar={actualizar} agregarTag={agregarTag} quitarTag={quitarTag} onBack={() => siguiente(2)} onNext={() => { if (!form.tags.length) return setError('Agrega al menos un producto para que te puedan encontrar.'); siguiente(4) }} onSkip={() => siguiente(4)} />}
           {paso === 4 && <Confirmacion form={form} onBack={() => siguiente(3)} onSubmit={handleSubmit} cargando={cargando} />}
           {error && <p role="alert" className="mt-5 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">{error}</p>}
         </div>
-        {paso === 1 && <p className="mt-6 text-center text-sm text-ink-muted">¿Ya tienes un perfil? <Link href="/login" className="font-semibold text-brand-dark hover:underline">Ingresa aquí</Link></p>}
+        {paso === 1 && !cuenta && !verificando && <p className="mt-6 text-center text-sm text-ink-muted">¿Ya tienes un perfil? <Link href="/login" className="font-semibold text-brand-dark hover:underline">Ingresa aquí</Link></p>}
       </div>
     </main>
   )
@@ -122,20 +179,21 @@ function Encabezado({ eyebrow, titulo, intro }) {
   )
 }
 
-function Cuenta({ form, actualizar, mostrarPassword, setMostrarPassword, onNext }) {
+// `soloPerfil`: la cuenta ya existe (hay sesión), así que solo se piden nombre y WhatsApp.
+function Cuenta({ form, actualizar, mostrarPassword, setMostrarPassword, onNext, soloPerfil }) {
   return (
     <section>
-      <Encabezado eyebrow="Tu cuenta" titulo="Empecemos con lo básico" intro="Tu cuenta te permitirá actualizar tu negocio cuando quieras." />
+      <Encabezado eyebrow="Tu cuenta" titulo={soloPerfil ? 'Completa tus datos' : 'Empecemos con lo básico'} intro={soloPerfil ? 'Necesitamos tu nombre y tu WhatsApp para administrar tu perfil.' : 'Tu cuenta te permitirá actualizar tu negocio cuando quieras.'} />
       <div className="mt-7">
         <Field id="nombre" label="Nombre completo" value={form.nombre} onChange={valor => actualizar('nombre', valor)} placeholder="Tu nombre" autoComplete="name" />
-        <Field id="email" label="Correo electrónico" type="email" value={form.email} onChange={valor => actualizar('email', valor)} placeholder="tu@correo.com" autoComplete="email" />
-        <div className="mb-5">
+        {!soloPerfil && <Field id="email" label="Correo electrónico" type="email" value={form.email} onChange={valor => actualizar('email', valor)} placeholder="tu@correo.com" autoComplete="email" />}
+        {!soloPerfil && <div className="mb-5">
           <label htmlFor="password" className="label">Contraseña</label>
           <div className="relative">
             <input id="password" type={mostrarPassword ? 'text' : 'password'} value={form.password} onChange={event => actualizar('password', event.target.value)} placeholder="Mínimo 6 caracteres" autoComplete="new-password" className="input pr-20" />
             <button type="button" onClick={() => setMostrarPassword(valor => !valor)} className="absolute inset-y-1 right-1 rounded-lg px-3 text-xs font-semibold text-ink-muted transition hover:bg-chip hover:text-ink">{mostrarPassword ? 'Ocultar' : 'Ver'}</button>
           </div>
-        </div>
+        </div>}
         <Field id="whatsapp" label="Tu WhatsApp" value={form.whatsapp} onChange={valor => actualizar('whatsapp', valor)} placeholder="+57 300 000 0000" hint="Solo lo usaremos para administrar tu perfil." autoComplete="tel" />
       </div>
       <button type="button" onClick={onNext} className="btn-primary w-full">Continuar</button>
