@@ -11,6 +11,13 @@
   --color-fuego: #ff5a36;
   --color-fuego-claro: #ff7a50;
   --color-arena: #efe3d6;
+  --color-mostaza: #ffc94d;
+
+  /* Perfil del negocio en modo noche: fondo casi negro, tarjetas café y texto arena. */
+  --color-noche: #14100e;
+  --color-noche-card: #241c18;
+  --color-noche-borde: #3a2d26;
+  --color-noche-texto: #cdbfb2;
 
   --color-paper: #fafaf7;
   --color-ink: #18181b;

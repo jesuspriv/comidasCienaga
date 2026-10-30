@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# datos de prueba locales (no se suben ni se despliegan)
+/supabase/seed/
+/supabase/.temp/

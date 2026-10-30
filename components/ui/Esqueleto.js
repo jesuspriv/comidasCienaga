@@ -2,8 +2,9 @@ import Logo from '@/components/ui/Logo'
 
 // Piezas de las pantallas de carga (loading.js): bloques grises que laten con la forma del contenido real.
 
-export function Bloque({ className = '' }) {
-  return <div className={`animate-pulse rounded-xl bg-line-strong/70 ${className}`} />
+// `oscuro`: para pantallas con fondo noche, como el perfil del negocio.
+export function Bloque({ className = '', oscuro = false }) {
+  return <div className={`animate-pulse rounded-xl ${oscuro ? 'bg-white/10' : 'bg-line-strong/70'} ${className}`} />
 }
 
 export function EncabezadoCargando() {

@@ -3,9 +3,11 @@ import { SITE_URL } from '@/lib/sitio'
 
 export default async function sitemap() {
   const supabase = await createClient()
+  // El sitemap es para Google: nunca incluye negocios de prueba.
   const { data: negocios } = await supabase
     .from('negocios')
     .select('id, created_at')
+    .eq('es_prueba', false)
 
   const baseUrl = SITE_URL
 

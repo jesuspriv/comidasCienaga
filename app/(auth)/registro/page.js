@@ -8,6 +8,7 @@ import { validateMenuFile, validatePhotoFiles } from '@/lib/uploads'
 import { CATEGORIAS, obtenerCategoria } from '@/lib/categorias'
 import { horarioInicial, resumenHorario, tieneHorario, validarHorario } from '@/lib/horario'
 import EditorHorario from '@/components/forms/EditorHorario'
+import { POLITICA_VERSION } from '@/lib/sitio'
 import Logo from '@/components/ui/Logo'
 import Icon from '@/components/ui/Icon'
 
@@ -36,7 +37,7 @@ export default function RegistroPage() {
   // { userId, email, tienePerfil }. `verificando` evita mostrar el paso 1 antes de saberlo.
   const [cuenta, setCuenta] = useState(null)
   const [verificando, setVerificando] = useState(true)
-  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horarios: horarioInicial(), tagsInput: '', tags: [], cartaFile: null, fotosFiles: [] })
+  const [form, setForm] = useState({ nombre: '', email: '', password: '', whatsapp: '', nombreNegocio: '', categoria: '', direccion: '', whatsappNegocio: '', horarios: horarioInicial(), tagsInput: '', tags: [], cartaFile: null, fotosFiles: [], aceptaPrivacidad: false })
 
   useEffect(() => {
     let activo = true
@@ -94,11 +95,17 @@ export default function RegistroPage() {
       setError(photosValidation.error || menuValidation.error)
       return
     }
+    if (!form.aceptaPrivacidad) return setError('Para publicar tu negocio debes aceptar la política de tratamiento de datos.')
     setCargando(true); setError('')
+    // Prueba de la autorización (Ley 1581): fecha y versión de la política, guardadas en la cuenta.
+    const autorizacion = { privacidad_aceptada_en: new Date().toISOString(), privacidad_version: POLITICA_VERSION }
     try {
       let userId = cuenta?.userId
-      if (!cuenta) {
-        const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password })
+      if (cuenta) {
+        const { error: autorizacionError } = await supabase.auth.updateUser({ data: autorizacion })
+        if (autorizacionError) throw autorizacionError
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: autorizacion } })
         if (authError || !authData.user) throw authError || new Error('No pudimos crear tu cuenta.')
         const { error: loginError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
         if (loginError) throw loginError
@@ -160,7 +167,7 @@ export default function RegistroPage() {
           {!verificando && paso === 1 && <Cuenta form={form} actualizar={actualizar} mostrarPassword={mostrarPassword} setMostrarPassword={setMostrarPassword} onNext={validarPasoUno} soloPerfil={Boolean(cuenta)} />}
           {!verificando && paso === 2 && <Negocio form={form} actualizar={actualizar} onBack={cuenta?.tienePerfil ? null : () => siguiente(1)} onNext={validarPasoDos} />}
           {paso === 3 && <Productos form={form} actualizar={actualizar} agregarTag={agregarTag} quitarTag={quitarTag} onBack={() => siguiente(2)} onNext={() => { if (!form.tags.length) return setError('Agrega al menos un producto para que te puedan encontrar.'); siguiente(4) }} onSkip={() => siguiente(4)} />}
-          {paso === 4 && <Confirmacion form={form} onBack={() => siguiente(3)} onSubmit={handleSubmit} cargando={cargando} />}
+          {paso === 4 && <Confirmacion form={form} actualizar={actualizar} onBack={() => siguiente(3)} onSubmit={handleSubmit} cargando={cargando} />}
           {error && <p role="alert" className="mt-5 rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">{error}</p>}
         </div>
         {paso === 1 && !cuenta && !verificando && <p className="mt-6 text-center text-sm text-ink-muted">¿Ya tienes un perfil? <Link href="/login" className="font-semibold text-brand-dark hover:underline">Ingresa aquí</Link></p>}
@@ -263,7 +270,7 @@ function Productos({ form, actualizar, agregarTag, quitarTag, onBack, onNext, on
   )
 }
 
-function Confirmacion({ form, onBack, onSubmit, cargando }) {
+function Confirmacion({ form, actualizar, onBack, onSubmit, cargando }) {
   const categoria = obtenerCategoria(form.categoria)
   return (
     <section>
@@ -284,6 +291,10 @@ function Confirmacion({ form, onBack, onSubmit, cargando }) {
         </div>
       </div>
       <p className="mt-4 text-center text-xs leading-relaxed text-ink-subtle">Podrás modificar toda esta información, fotos y productos más adelante.</p>
+      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-line-strong bg-paper p-4 text-sm leading-relaxed text-ink-muted transition hover:border-ink">
+        <input type="checkbox" checked={form.aceptaPrivacidad} onChange={event => actualizar('aceptaPrivacidad', event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-ink" />
+        <span>Autorizo el tratamiento de mis datos personales según la <Link href="/privacidad" target="_blank" className="font-semibold text-brand-dark underline">política de tratamiento de datos</Link>. Entiendo que el perfil del negocio será público.</span>
+      </label>
       <Actions onBack={onBack} onNext={onSubmit} nextLabel={cargando ? 'Publicando…' : 'Publicar mi negocio'} disabled={cargando} />
     </section>
   )

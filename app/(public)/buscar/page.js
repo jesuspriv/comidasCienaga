@@ -7,6 +7,7 @@ import Icon from '@/components/ui/Icon'
 import { CATEGORIAS_FILTRO, esCategoriaValida, obtenerCategoria } from '@/lib/categorias'
 import { conEstado } from '@/lib/horario'
 import { hacePedidosADomicilio } from '@/lib/pedidos'
+import { sinPrueba } from '@/lib/negocios'
 
 export const metadata = {
   title: 'Buscar comida — ComidasCiénaga',
@@ -25,7 +26,7 @@ export default async function BuscarPage({ searchParams }) {
   const hayFiltros = Boolean(q) || categoria !== 'todos' || soloAbiertos || conDomicilio
 
   // Sin búsqueda ni filtros se muestran todos los negocios, abiertos y cerrados.
-  let consulta = supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })
+  let consulta = sinPrueba(supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }))
   if (q) {
     const ids = await buscarIds(supabase, q)
     consulta = consulta.in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000'])
@@ -34,7 +35,7 @@ export default async function BuscarPage({ searchParams }) {
   const [{ data }, { data: todos }] = await Promise.all([
     consulta,
     // Resumen general para el panel lateral: siempre sobre todos los negocios.
-    supabase.from('negocios').select('id, nombre, abierto_ahora, horarios, pausado_hasta, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }),
+    sinPrueba(supabase.from('negocios').select('id, nombre, abierto_ahora, horarios, pausado_hasta, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })),
   ])
   // Abierto/cerrado se calcula con el horario, así que ese filtro se aplica aquí y no en la consulta.
   const negocios = conEstado(data).filter(negocio => (!soloAbiertos || negocio.abierto_ahora) && (!conDomicilio || hacePedidosADomicilio(negocio)))

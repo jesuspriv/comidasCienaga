@@ -7,20 +7,27 @@ import { enlaceWhatsApp, etiquetaPago, mensajePedido, textoCostoDomicilio } from
 
 // Botones para pedir por WhatsApp con el mensaje ya escrito.
 // Si el negocio configuró domicilio o recogida, primero se elige cómo se quiere el pedido.
-// `variante`: "barra" (barra fija de móvil) o "tarjeta" (tarjeta lateral de escritorio).
+// `variante`: "barra" (barra fija de móvil), "hero" (botón verde grande del perfil)
+// o "tarjeta" (tarjeta lateral de escritorio).
 export default function PedirWhatsApp({ nombre, whatsapp, pedidos, direccion, variante }) {
   const [abierto, setAbierto] = useState(null)
   const opciones = [pedidos?.domicilio && 'domicilio', pedidos?.recoger && 'recoger'].filter(Boolean)
+  const unBoton = variante === 'barra' || variante === 'hero'
+  const claseBoton = variante === 'hero'
+    ? 'inline-flex h-14 items-center justify-center gap-2.5 rounded-full bg-ok-dot px-7 text-base font-extrabold text-white shadow-[0_14px_30px_rgba(30,154,82,0.35)] transition hover:-translate-y-px hover:bg-ok'
+    : variante === 'barra'
+      ? 'inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-ok-dot px-5 text-[15px] font-bold text-white transition hover:bg-ok'
+      : 'btn-primary w-full'
 
   if (!opciones.length) {
     const href = enlaceWhatsApp(whatsapp, mensajePedido(nombre))
-    return href ? <a href={href} target="_blank" rel="noopener noreferrer" className={`btn-primary ${variante === 'barra' ? 'flex-1' : 'w-full'}`}><Icon name="whatsapp" size={18} /> Escribir por WhatsApp</a> : null
+    return href ? <a href={href} target="_blank" rel="noopener noreferrer" className={claseBoton}><Icon name="whatsapp" size={variante === 'hero' ? 20 : 18} /> Escribir por WhatsApp</a> : null
   }
 
   return (
     <>
-      {variante === 'barra' ? (
-        <button type="button" onClick={() => setAbierto(opciones[0])} className="btn-primary flex-1"><Icon name="whatsapp" size={18} /> Pedir por WhatsApp</button>
+      {unBoton ? (
+        <button type="button" onClick={() => setAbierto(opciones[0])} className={claseBoton}><Icon name="whatsapp" size={variante === 'hero' ? 20 : 18} /> Pedir por WhatsApp</button>
       ) : (
         <div className="space-y-2">
           {opciones.map((tipo, indice) => (
@@ -54,7 +61,7 @@ function Dialogo({ nombre, whatsapp, pedidos, direccion, opciones, inicial, onCe
   }
 
   const detalle = {
-    domicilio: [textoCostoDomicilio(pedidos), pedidos.tiempo, pedidos.barrios?.length ? pedidos.barrios.join(', ') : 'Pregunta si llega a tu barrio'].filter(Boolean).join(' · '),
+    domicilio: [textoCostoDomicilio(pedidos), pedidos.tiempo, 'Toda Ciénaga'].filter(Boolean).join(' · '),
     recoger: direccion || 'Pregunta la dirección por WhatsApp',
   }
   const href = enlaceWhatsApp(whatsapp, mensaje)

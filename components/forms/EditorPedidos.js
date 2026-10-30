@@ -1,7 +1,5 @@
 'use client'
 
-import { useState } from 'react'
-import Icon from '@/components/ui/Icon'
 import { PAGOS, TIEMPOS } from '@/lib/pedidos'
 
 const COSTOS = [
@@ -12,16 +10,7 @@ const COSTOS = [
 
 // Editor de domicilio, recogida y formas de pago. `valor` tiene la forma de lib/pedidos.js.
 export default function EditorPedidos({ valor, onChange, direccion }) {
-  const [barrioNuevo, setBarrioNuevo] = useState('')
   const cambiar = cambios => onChange({ ...valor, ...cambios })
-
-  function agregarBarrio(event) {
-    if (event.key !== 'Enter' && event.key !== ',') return
-    event.preventDefault()
-    const barrio = barrioNuevo.replace(',', '').trim()
-    if (barrio && !valor.barrios.includes(barrio)) cambiar({ barrios: [...valor.barrios, barrio] })
-    setBarrioNuevo('')
-  }
 
   function alternarPago(pago) {
     cambiar({ pagos: valor.pagos.includes(pago) ? valor.pagos.filter(item => item !== pago) : [...valor.pagos, pago] })
@@ -30,7 +19,7 @@ export default function EditorPedidos({ valor, onChange, direccion }) {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-line p-4 sm:p-5">
-        <Interruptor id="pedidos-domicilio" titulo="Hago domicilios" ayuda="Los clientes podrán filtrar por «Con domicilio»." activo={valor.domicilio} onChange={domicilio => cambiar({ domicilio })} />
+        <Interruptor id="pedidos-domicilio" titulo="Hago domicilios" ayuda="A toda Ciénaga. Los clientes podrán filtrar por «Con domicilio»." activo={valor.domicilio} onChange={domicilio => cambiar({ domicilio })} />
         {valor.domicilio && (
           <div className="mt-5 space-y-4">
             <fieldset>
@@ -46,35 +35,18 @@ export default function EditorPedidos({ valor, onChange, direccion }) {
                   )
                 })}
               </div>
-              {valor.costo_tipo !== 'gratis' && (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  {valor.costo_tipo === 'gratis_desde' && <CampoPesos id="pedidos-minimo" label="Gratis en pedidos desde" valor={valor.minimo_gratis} onChange={minimo_gratis => cambiar({ minimo_gratis })} />}
-                  <CampoPesos id="pedidos-costo" label={valor.costo_tipo === 'gratis_desde' ? 'Si el pedido es menor, cuesta' : 'Valor del domicilio'} valor={valor.costo} onChange={costo => cambiar({ costo })} />
+              {/* El domicilio se da por hecho en toda Ciénaga: solo se pide valor y tiempo. */}
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                {valor.costo_tipo === 'gratis_desde' && <CampoPesos id="pedidos-minimo" label="Gratis en pedidos desde" valor={valor.minimo_gratis} onChange={minimo_gratis => cambiar({ minimo_gratis })} />}
+                {valor.costo_tipo !== 'gratis' && <CampoPesos id="pedidos-costo" label={valor.costo_tipo === 'gratis_desde' ? 'Si el pedido es menor, cuesta' : 'Valor del domicilio'} valor={valor.costo} onChange={costo => cambiar({ costo })} />}
+                <div>
+                  <label htmlFor="pedidos-tiempo" className="label">Tiempo estimado</label>
+                  <select id="pedidos-tiempo" value={valor.tiempo} onChange={event => cambiar({ tiempo: event.target.value })} className="input">
+                    {TIEMPOS.map(tiempo => <option key={tiempo}>{tiempo}</option>)}
+                  </select>
                 </div>
-              )}
+              </div>
             </fieldset>
-
-            <div className="grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
-              <div>
-                <label htmlFor="pedidos-tiempo" className="label">Tiempo estimado</label>
-                <select id="pedidos-tiempo" value={valor.tiempo} onChange={event => cambiar({ tiempo: event.target.value })} className="input">
-                  {TIEMPOS.map(tiempo => <option key={tiempo}>{tiempo}</option>)}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="pedidos-barrios" className="label">Barrios a los que llegas</label>
-                <div className="flex min-h-12 flex-wrap items-center gap-1.5 rounded-xl border border-line-strong bg-white p-1.5 focus-within:border-ink focus-within:ring-4 focus-within:ring-ink/10">
-                  {valor.barrios.map(barrio => (
-                    <span key={barrio} className="flex h-8 items-center gap-1 rounded-full bg-chip pl-3 pr-1 text-sm">
-                      {barrio}
-                      <button type="button" onClick={() => cambiar({ barrios: valor.barrios.filter(item => item !== barrio) })} aria-label={`Quitar ${barrio}`} className="flex h-6 w-6 items-center justify-center rounded-full text-ink-muted hover:bg-line"><Icon name="x" size={13} /></button>
-                    </span>
-                  ))}
-                  <input id="pedidos-barrios" value={barrioNuevo} onChange={event => setBarrioNuevo(event.target.value)} onKeyDown={agregarBarrio} placeholder={valor.barrios.length ? 'Otro barrio' : 'Escribe un barrio y presiona Enter'} className="h-8 min-w-[160px] flex-1 bg-transparent px-2 text-base outline-none placeholder:text-ink-subtle/80" />
-                </div>
-                <p className="mt-1.5 text-xs text-ink-subtle">Opcional. Si lo dejas vacío, dirá «Pregunta si llega a tu barrio».</p>
-              </div>
-            </div>
           </div>
         )}
       </div>

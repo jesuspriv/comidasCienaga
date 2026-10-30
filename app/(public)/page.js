@@ -6,6 +6,7 @@ import Icon from '@/components/ui/Icon'
 import { CATEGORIAS_FILTRO, esCategoriaValida, obtenerCategoria } from '@/lib/categorias'
 import { conEstado } from '@/lib/horario'
 import { resumenEntrega } from '@/lib/pedidos'
+import { sinPrueba } from '@/lib/negocios'
 
 export const metadata = {
   title: 'ComidasCiénaga — Encuentra dónde comer en Ciénaga, Magdalena',
@@ -21,7 +22,7 @@ export default async function Home({ searchParams }) {
   const { categoria = 'todos' } = await searchParams
   const categoriaActiva = esCategoriaValida(categoria) ? categoria : 'todos'
   const supabase = await createClient()
-  let consulta = supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })
+  let consulta = sinPrueba(supabase.from('negocios').select('*, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }))
   if (categoriaActiva !== 'todos') consulta = consulta.eq('categoria', categoriaActiva)
   const { data: negocios } = await consulta
   const listaNegocios = conEstado(negocios)
@@ -31,7 +32,7 @@ export default async function Home({ searchParams }) {
   // La portada, las categorías y el mosaico siempre usan todos los negocios, aunque haya un filtro activo.
   let todos = listaNegocios
   if (categoriaActiva !== 'todos') {
-    const { data } = await supabase.from('negocios').select('id, nombre, categoria, abierto_ahora, horarios, pausado_hasta, calificacion_promedio, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false })
+    const { data } = await sinPrueba(supabase.from('negocios').select('id, nombre, categoria, abierto_ahora, horarios, pausado_hasta, calificacion_promedio, fotos_comida(url), tags(valor)').order('calificacion_promedio', { ascending: false }))
     todos = conEstado(data)
   }
   const sinNegocios = todos.length === 0
